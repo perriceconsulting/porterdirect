@@ -705,3 +705,21 @@ live-map reactivity.
     paired address blocks left them 22px out of line. Positional selectors are fragile;
     a pair meant to read as one row must be styled identically.
   - Ratchets: tests = **310** + 6 PHAST + 27 e2e; client components = 2; lint = 0.
+
+- **2026-09-07 — Scope decision: US-first.**
+  - Focus narrowed to the US, which is more consistent with the PRD than the
+    international work that preceded it: **IFTA is a US/Canada agreement and Rate Cons
+    are US freight paperwork**, so the freight vertical was never going global first.
+  - What changed: the country picker is gone from signup. Asking every operator to state
+    a country in order to answer "US" is a field that earns nothing on a form that
+    already has seven.
+  - What deliberately did NOT change: `tenants.default_country`, `addressLabels()`,
+    `supportedCountries()`, E.164 phone storage, and `region`/`postal_code` naming. Those
+    are not "international features" — E.164 is what makes phone search work at all, and
+    a column called `state` would force a non-US operator to put a non-state into it.
+    Removing them would be work that reduces capability.
+  - The picker COMPONENT was deleted rather than parked. An unused component kept "for
+    later" is speculative structure; the data layer is what makes serving a non-US
+    operator a form change rather than a migration, and the widget is forty lines to
+    write again when an operator needs it.
+  - Ratchets unchanged: tests = 310 + 6 PHAST + 27 e2e; client components = 2; lint = 0.

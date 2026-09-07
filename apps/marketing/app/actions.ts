@@ -178,12 +178,15 @@ export async function signUpAction(data: FormData): Promise<void> {
   const password = str(data, "password");
   const company = str(data, "company");
   const host = str(data, "host");
-  const country = str(data, "country");
+  // US-first: not asked at signup, so the tenant takes the default. The field and the
+  // per-country machinery remain, so serving a non-US operator is a form change rather
+  // than a schema migration.
+  const country = "US";
   const planId = str(data, "plan");
   const seatsRaw = str(data, "seats");
 
   const keep = { email, company, host, plan: planId, seats: seatsRaw, firstName, lastName, country };
-  if (!firstName || !lastName || !email || !password || !company || !host || !planId || !country) {
+  if (!firstName || !lastName || !email || !password || !company || !host || !planId) {
     back("/signup", "missing-fields", keep);
   }
 

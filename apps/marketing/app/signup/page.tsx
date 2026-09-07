@@ -9,7 +9,6 @@ import { signUpAction } from "../actions";
 import type { FormErrorCode } from "../actions";
 import { SiteHeader } from "../_components/site-header";
 import { PasswordField } from "../_components/password-field";
-import { CountrySelect } from "../_components/country-select";
 
 export const metadata = { title: "Start a subscription — PorterDirect" };
 
@@ -121,12 +120,19 @@ export default async function SignUp({
               <span className="hint">Shown to your customers on tracking pages.</span>
             </div>
 
-            <CountrySelect
-              name="country"
-              label="Where do you operate?"
-              defaultValue={params.country ?? "US"}
-              hint="Sets how phone numbers and addresses are read for your team. Changeable later."
-            />
+            {/*
+              No country picker: the product is US-first, and the PRD's freight features
+              are US instruments anyway — IFTA is a US/Canada agreement and Rate Cons are
+              US paperwork. Asking every operator to state a country to answer "US" is a
+              field that earns nothing.
+
+              The DATA layer stays — tenants.default_country, addressLabels(),
+              supportedCountries(), E.164 storage — because that is what makes serving a
+              non-US operator a form change rather than a migration. The picker component
+              itself was deleted: an unused component kept "for later" is speculative
+              structure, and it is forty lines to write again when there is an operator
+              who needs it.
+            */}
 
             <div className="field">
               <label htmlFor="host">Your dispatch domain</label>
