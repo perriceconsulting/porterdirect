@@ -1,0 +1,31 @@
+{
+  "name": "porterdirect",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Multi-tenant, white-label logistics SaaS platform (courier + freight modules).",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -b packages/db packages/billing",
+    "verify:catalog": "vitest run packages/billing/test/plans.test.ts",
+    "guard:stripe": "bash scripts/guard-stripe-env.sh",
+    "stripe:doctor": "bash scripts/stripe-doctor.sh",
+    "dev": "npm run dev -w @porterdirect/marketing",
+    "stripe:listen": "bash scripts/stripe-listen.sh",
+    "stripe:prices": "tsx scripts/stripe-create-prices.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "tsx": "^4.23.13",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

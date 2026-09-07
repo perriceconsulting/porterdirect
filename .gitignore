@@ -1,0 +1,17 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env.local
+.env.*.local
+# Never commit a secrets sidecar — untracked is NOT ignored otherwise (see CLAUDE.md).
+# `*.env.bak` alone does NOT match `.env.local.bak`, which is the name the standard warns about.
+*.env.bak
+.env*.bak*
+.env*.backup*
+.env*.orig
+.env*.save
+.DS_Store
+*.log
+coverage/
+.next/

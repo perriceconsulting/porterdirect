@@ -1,0 +1,79 @@
+/**
+ * Pure subscription-state logic and money math. No I/O, no Stripe SDK, no DB — every
+ * function here is a deterministic data invariant that unit tests cover in milliseconds
+ * (CLAUDE.md: an invariant belongs in a fast test, not a browser).
+ */
+import { getPlan, type Plan } from "./plans.js";
+import type { StripeSubscriptionSnapshot, SubscriptionStatus, TenantSubscription } from "./types.js";
+
+/** Map Stripe's raw status string onto our normalized vocabulary. */
+export function normalizeStatus(rawStatus: string): SubscriptionStatus {
+  switch (rawStatus) {
+    case "trialing":
+    case "active":
+    case "past_due":
+    case "unpaid":
+    case "canceled":
+    case "incomplete":
+    case "paused":
+      return rawStatus;
+    case "incomplete_expired":
+      return "canceled";
+    default:
+      throw new Error(`Unrecognized Stripe subscription status: ${rawStatus}`);
+  }
+}
+
+/**
+ * Entitlement policy: only active and trialing subscriptions may use the platform.
+ * past_due/unpaid are intentionally NOT entitled — dunning gates access. Centralized
+ * here so every surface derives entitlement from one rule (DOSI-S).
+ */
+export function isEntitled(status: SubscriptionStatus): boolean {
+  return status === "active" || status === "trialing";
+}
+
+/** Convert a webhook snapshot into our canonical TenantSubscription, enforcing invariants. */
+export function toTenantSubscription(snapshot: StripeSubscriptionSnapshot): TenantSubscription {
+  // Validates the plan id against the catalog; throws on an unknown plan.
+  getPlan(snapshot.planId);
+
+  if (!Number.isInteger(snapshot.seatCount) || snapshot.seatCount < 0) {
+    throw new Error(`Invalid seatCount: ${snapshot.seatCount} (must be a non-negative integer)`);
+  }
+
+  const status = normalizeStatus(snapshot.rawStatus);
+  return {
+    stripeSubscriptionId: snapshot.stripeSubscriptionId,
+    planId: snapshot.planId,
+    status,
+    seatCount: snapshot.seatCount,
+    currentPeriodEnd:
+      snapshot.currentPeriodEndUnix === null ? null : new Date(snapshot.currentPeriodEndUnix * 1000),
+    cancelAtPeriodEnd: snapshot.cancelAtPeriodEnd,
+    entitled: isEntitled(status),
+  };
+}
+
+/** Seats billed on top of the plan's included allotment. Never negative. */
+export function billableExtraSeats(plan: Plan, seatCount: number): number {
+  return Math.max(0, seatCount - plan.includedSeats);
+}
+
+/**
+ * Recurring monthly total in cents for a plan at a given seat count.
+ *
+ * PRE-TAX. This mirrors what the graduated Stripe Price charges as the line-item
+ * subtotal; Stripe Tax adds sales tax / VAT on top at invoice time. A surface that
+ * renders this next to a Stripe invoice TOTAL will legitimately show a smaller number —
+ * that is the tax, not a bug. Never add tax here (see plans.ts header).
+ * Invariant: total >= base price; extra seats are charged only above the included count.
+ * (One-time setup fees are billed separately on the first invoice, not here.)
+ */
+export function computeMonthlyTotalCents(planId: string, seatCount: number): number {
+  const plan = getPlan(planId);
+  if (!Number.isInteger(seatCount) || seatCount < 0) {
+    throw new Error(`Invalid seatCount: ${seatCount} (must be a non-negative integer)`);
+  }
+  return plan.monthlyBasePriceCents + billableExtraSeats(plan, seatCount) * plan.extraSeatPriceCents;
+}
