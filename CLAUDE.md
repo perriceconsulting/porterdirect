@@ -572,3 +572,28 @@ live-map reactivity.
     "secondary action". Secondary is not an exemption from the 44px minimum — a smaller
     target misfires identically, and this one withdraws an invitation.
   - Ratchets: tests = **243** + 6 PHAST + 25 e2e; client components = 1; lint = 0.
+
+- **2026-09-07 — Order form audited against the PRD; customer names structured.**
+  - **Structured customer name**, same reasoning as the user table: one free-text name
+    cannot tell two customers called John Smith apart, sort by surname, or address anyone
+    correctly. Unlike `users` there is deliberately **no derived `customer_name` column** —
+    that one exists only because Better Auth demands it, and with no external constraint a
+    display name stored beside its own two parts is a second source of truth.
+  - **Pushed back on making the name unique.** Two customers genuinely can share a name,
+    and a uniqueness constraint would refuse the second one a delivery. What identifies a
+    customer is the PHONE — which is also what the PRD's masked calling keys off. Asserted
+    by a test that creates two orders for the same name and expects both to succeed.
+  - **PRD gap found and closed:** the brief defines `scheduled_courier` as an "exact-time-
+    window white-glove run", and the form collected no time at all. `scheduledFor` is now
+    required for that type — an unscheduled "scheduled" job is a contradiction the board
+    cannot act on.
+  - **PRD gaps found and NOT closed, recorded rather than quietly skipped:**
+    `shop_in_store` and `errand` are variable-total types (pre-authorise an estimate plus
+    buffer, capture the true total at the till), but the form asks for one fixed price.
+    The columns exist (`authorized_cents`, `captured_cents`) and `captureTotal` enforces
+    `captured <= authorized`; nothing writes them yet. `errand` also needs a "buy X" list
+    the form does not capture. Both are real product gaps, not oversights.
+  - Renaming a column with drizzle-kit needs a TTY (it asks rename-or-recreate). With no
+    orders to preserve, it was done as two unambiguous migrations — drop, then add —
+    rather than hand-writing SQL, so migrations stay generated from `schema.ts`.
+  - Ratchets: tests = **264** + 6 PHAST + 25 e2e; client components = 1; lint = 0.

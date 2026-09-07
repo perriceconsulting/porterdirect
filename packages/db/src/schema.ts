@@ -246,7 +246,36 @@ export const orders = pgTable(
     type: orderType("type").notNull(),
     status: orderStatus("status").notNull().default("pending"),
 
-    customerName: text("customer_name").notNull(),
+    /**
+     * Structured, for the same reason the user table is: a single free-text name
+     * cannot tell two customers called John Smith apart, cannot be sorted by surname,
+     * and cannot address someone correctly in a notification.
+     *
+     * Unlike `users`, there is NO derived `customer_name` column here. That one exists
+     * only because Better Auth requires it; without an external constraint, storing a
+     * display name alongside its own two parts would be a second source of truth for
+     * the same fact. The display form is composed at the point of use.
+     *
+     * Deliberately NOT unique. Two different customers genuinely can share a name, and
+     * a uniqueness constraint would refuse the second one a delivery. What identifies a
+     * customer is their phone — which is also what masked calling keys off.
+     */
+    /**
+     * Structured, for the same reason the user table is: a single free-text name cannot
+     * tell two customers called John Smith apart, cannot be sorted by surname, and
+     * cannot address someone correctly in a notification.
+     *
+     * Unlike `users`, there is deliberately NO derived `customer_name` column. That one
+     * exists only because Better Auth requires it; with no external constraint, storing
+     * a display name beside its own two parts would be a second source of truth for the
+     * same fact. The display form is composed at the point of use.
+     *
+     * Deliberately NOT unique. Two customers genuinely can share a name, and a
+     * uniqueness constraint would refuse the second one a delivery. What identifies a
+     * customer is their phone — which is also what masked calling keys off.
+     */
+    customerFirstName: text("customer_first_name").notNull(),
+    customerLastName: text("customer_last_name").notNull(),
     customerPhone: text("customer_phone"),
 
     pickupAddress: text("pickup_address").notNull(),

@@ -36,6 +36,20 @@
       "when": 1788789585052,
       "tag": "0004_rapid_power_pack",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788790837464,
+      "tag": "0005_uneven_wong",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788790854800,
+      "tag": "0006_nostalgic_doorman",
+      "breakpoints": true
     }
   ]
 }

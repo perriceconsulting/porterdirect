@@ -107,7 +107,7 @@ export default async function OrdersBoard({
                           </a>
                         </td>
                         <td>
-                          {o.customerName}
+                          {o.customerFirstName} {o.customerLastName}
                           <br />
                           <span className="hint">{o.dropoffAddress}</span>
                         </td>
@@ -147,7 +147,9 @@ export default async function OrdersBoard({
                             {o.reference}
                           </a>
                         </td>
-                        <td>{o.customerName}</td>
+                        <td>
+                          {o.customerFirstName} {o.customerLastName}
+                        </td>
                         <td>
                           <span className={statusClass(o.status)}>
                             {STATUS_LABELS[o.status]}
@@ -168,15 +170,27 @@ export default async function OrdersBoard({
               <form action={createOrderAction}>
                 <input type="hidden" name="tenantId" value={tenantId} />
 
+                {/* First and last separately: one free-text name cannot tell two
+                    customers called John Smith apart. Deliberately NOT unique — two
+                    customers genuinely can share a name, and the phone is what
+                    identifies them (and what masked calling will key off). */}
                 <div className="row-2">
                   <div className="field">
-                    <label htmlFor="customerName">Customer name</label>
-                    <input id="customerName" name="customerName" required />
+                    <label htmlFor="customerFirstName">Customer first name</label>
+                    <input id="customerFirstName" name="customerFirstName" required />
                   </div>
                   <div className="field">
-                    <label htmlFor="customerPhone">Customer phone</label>
-                    <input id="customerPhone" name="customerPhone" type="tel" inputMode="tel" />
+                    <label htmlFor="customerLastName">Customer last name</label>
+                    <input id="customerLastName" name="customerLastName" required />
                   </div>
+                </div>
+
+                <div className="field">
+                  <label htmlFor="customerPhone">Customer phone</label>
+                  <input id="customerPhone" name="customerPhone" type="tel" inputMode="tel" />
+                  <span className="hint">
+                    How this customer is identified — two people can share a name.
+                  </span>
                 </div>
 
                 <div className="field">
@@ -211,6 +225,15 @@ export default async function OrdersBoard({
                     />
                     <span className="hint">In dollars. Stored as whole cents.</span>
                   </div>
+                </div>
+
+                <div className="field">
+                  <label htmlFor="scheduledFor">Scheduled for</label>
+                  <input id="scheduledFor" name="scheduledFor" type="datetime-local" />
+                  <span className="hint">
+                    Required for a scheduled courier run — the exact time window is the
+                    product for that type.
+                  </span>
                 </div>
 
                 <div className="field">

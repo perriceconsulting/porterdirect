@@ -18,12 +18,18 @@ export interface CreateOrderInput {
   readonly tenantId: string;
   readonly actorUserId: string;
   readonly type: OrderType;
-  readonly customerName: string;
+  readonly customerFirstName: string;
+  readonly customerLastName: string;
   readonly customerPhone?: string;
   readonly pickupAddress: string;
   readonly dropoffAddress: string;
   readonly notes?: string;
   readonly priceCents: number;
+  /**
+   * Required for `scheduled_courier`. An exact time window IS the product for that type,
+   * so an unscheduled "scheduled" job is a contradiction the board cannot act on.
+   */
+  readonly scheduledFor?: Date | null;
 }
 
 /**
@@ -48,9 +54,19 @@ export class OrderValidationError extends Error {
 }
 
 export async function createOrder(db: Db, input: CreateOrderInput): Promise<Order> {
-  if (!input.customerName.trim()) throw new OrderValidationError("Customer name is required.");
+  if (!input.customerFirstName.trim()) {
+    throw new OrderValidationError("Customer first name is required.");
+  }
+  if (!input.customerLastName.trim()) {
+    throw new OrderValidationError("Customer last name is required.");
+  }
   if (!input.pickupAddress.trim()) throw new OrderValidationError("Pickup address is required.");
   if (!input.dropoffAddress.trim()) throw new OrderValidationError("Drop-off address is required.");
+  if (input.type === "scheduled_courier" && !input.scheduledFor) {
+    // The product brief defines this type as an exact-time-window run. Accepting one
+    // without a window puts a job on the board nobody can schedule against.
+    throw new OrderValidationError("A scheduled courier job needs a date and time.");
+  }
   if (!Number.isInteger(input.priceCents) || input.priceCents < 0) {
     // Money is integer cents. A float arriving here means one leaked in upstream.
     throw new OrderValidationError("Price must be a whole number of cents, zero or more.");
@@ -68,12 +84,14 @@ export async function createOrder(db: Db, input: CreateOrderInput): Promise<Orde
           reference: newReference(),
           type: input.type,
           status: "pending",
-          customerName: input.customerName.trim(),
+          customerFirstName: input.customerFirstName.trim(),
+          customerLastName: input.customerLastName.trim(),
           customerPhone: input.customerPhone?.trim() || null,
           pickupAddress: input.pickupAddress.trim(),
           dropoffAddress: input.dropoffAddress.trim(),
           notes: input.notes?.trim() || null,
           priceCents: input.priceCents,
+          scheduledFor: input.scheduledFor ?? null,
         })
         .returning();
 

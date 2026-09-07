@@ -53,17 +53,28 @@ export async function createOrderAction(data: FormData): Promise<void> {
     redirect(`${base}?error=${encodeURIComponent("Enter a price like 49.50.")}`);
   }
 
+  // datetime-local arrives as "2026-09-08T14:30" with no zone, so it is read in the
+  // server's zone. A real deployment needs the TENANT's zone, which is not stored yet —
+  // recorded here rather than silently assumed correct.
+  const scheduledRaw = field(data, "scheduledFor");
+  const scheduledFor = scheduledRaw ? new Date(scheduledRaw) : null;
+  if (scheduledFor && Number.isNaN(scheduledFor.getTime())) {
+    redirect(base + "?error=" + encodeURIComponent("That date and time could not be read."));
+  }
+
   try {
     await createOrder(db, {
       tenantId,
       actorUserId: userId,
       type,
-      customerName: field(data, "customerName"),
+      customerFirstName: field(data, "customerFirstName"),
+      customerLastName: field(data, "customerLastName"),
       customerPhone: field(data, "customerPhone"),
       pickupAddress: field(data, "pickupAddress"),
       dropoffAddress: field(data, "dropoffAddress"),
       notes: field(data, "notes"),
       priceCents,
+      scheduledFor,
     });
   } catch (err) {
     if (isRedirectError(err)) throw err;

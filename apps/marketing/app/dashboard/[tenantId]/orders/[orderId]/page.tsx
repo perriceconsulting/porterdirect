@@ -88,7 +88,9 @@ export default async function OrderDetail({
                 </li>
                 <li>
                   <span className="k">Customer</span>
-                  <span className="v">{order.customerName}</span>
+                  <span className="v">
+                    {order.customerFirstName} {order.customerLastName}
+                  </span>
                 </li>
                 {order.customerPhone ? (
                   <li>
@@ -104,6 +106,14 @@ export default async function OrderDetail({
                   <span className="k">Deliver to</span>
                   <span className="v">{order.dropoffAddress}</span>
                 </li>
+                {order.scheduledFor ? (
+                  <li>
+                    <span className="k">Scheduled for</span>
+                    <span className="v">
+                      {order.scheduledFor.toISOString().replace("T", " ").slice(0, 16)}
+                    </span>
+                  </li>
+                ) : null}
                 <li>
                   <span className="k">Price</span>
                   <span className="v">{formatUsdCents(order.priceCents)}</span>
