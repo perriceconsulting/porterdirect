@@ -18,6 +18,7 @@ import {
   getCountryCallingCode,
   isSupportedCountry as isSupportedByMetadata,
   parsePhoneNumberFromString,
+  validatePhoneNumberLength,
   type CountryCode,
 } from "libphonenumber-js/min";
 
@@ -135,4 +136,30 @@ export function isSupportedCountry(code: string): code is CountryCode {
 /** Every country the metadata covers, for a settings picker. */
 export function supportedCountries(): readonly CountryCode[] {
   return getCountries();
+}
+
+/**
+ * Is this already longer than any number in the relevant plan?
+ *
+ * The distinction matters more than it looks. E.164 allows fifteen digits GLOBALLY, but
+ * a US national number is ten — so capping input at fifteen lets someone type twelve
+ * digits, at which point no plan matches and the formatter degrades to raw digits. It
+ * reads exactly like the formatting has broken.
+ *
+ * The limit therefore comes from the metadata for the actual country (or from the
+ * number's own prefix when it carries one), never from a constant kept here.
+ */
+export function isTooLong(input: string, country: CountryCode = DEFAULT_COUNTRY): boolean {
+  const trimmed = input.trim();
+  if (!trimmed) return false;
+  try {
+    const result = trimmed.startsWith("+")
+      ? validatePhoneNumberLength(trimmed)
+      : validatePhoneNumberLength(trimmed, country);
+    return result === "TOO_LONG";
+  } catch {
+    // An unparseable fragment is not "too long" — it is just not a number yet, and
+    // blocking the keystroke would stop someone correcting it.
+    return false;
+  }
 }

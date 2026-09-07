@@ -13,16 +13,18 @@
  *   Deletions are NOT reformatted. Formatting a deletion re-inserts the punctuation the
  *   user is removing, so backspace appears to do nothing.
  *
- *   Input is capped by DIGIT COUNT, not string length. Past the longest possible number
- *   the formatter stops matching any plan and silently degrades to appending raw digits,
- *   which reads as "it started formatting and then broke". Refusing the extra digits
- *   keeps the field in a state the formatter can actually render.
+ *   Input is capped by the COUNTRY'S OWN plan length, not a fixed number of digits. Past
+ *   the longest number that plan allows, the formatter stops matching and degrades to
+ *   appending raw digits, which reads as "it started formatting and then broke".
  */
 import { useState } from "react";
-import { formatAsYouType, isValidPhone, type CountryCode } from "@porterdirect/contact";
+import {
+  formatAsYouType,
+  isTooLong,
+  isValidPhone,
+  type CountryCode,
+} from "@porterdirect/contact";
 
-/** E.164 allows at most 15 digits, country code included. */
-const MAX_DIGITS = 15;
 /** Below this there is nothing to judge yet, so saying "invalid" would just be nagging. */
 const MIN_DIGITS_BEFORE_JUDGING = 7;
 
@@ -86,9 +88,13 @@ export function PhoneField({
             return;
           }
 
-          // Refuse digits past the longest number that can exist. Without this the
-          // formatter gives up and starts appending, which looks like a failure.
-          if (digitsOf(next).length > MAX_DIGITS) return;
+          // Refuse a digit that would take the number past its own plan's length.
+          //
+          // NOT a fixed cap: fifteen is the E.164 GLOBAL maximum, while a US national
+          // number is ten. Capping at fifteen let twelve digits through, matched no
+          // plan, and the formatter degraded to raw digits — which reads exactly like
+          // the formatting breaking. The limit comes from the metadata per country.
+          if (isTooLong(next, country)) return;
 
           setValue(formatAsYouType(next, country));
         }}

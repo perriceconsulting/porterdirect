@@ -4,6 +4,7 @@ import {
   formatAsYouType,
   formatPhone,
   isSupportedCountry,
+  isTooLong,
   isValidPhone,
   parsePhone,
   supportedCountries,
@@ -163,5 +164,46 @@ describe("country support", () => {
     expect(all.length).toBeGreaterThan(200);
     expect(all).toContain(DEFAULT_COUNTRY);
     expect(all).toContain("GB");
+  });
+});
+
+describe("isTooLong", () => {
+  /**
+   * The bug this closes: input was capped at fifteen digits, the E.164 GLOBAL maximum.
+   * A US national number is ten, so twelve digits passed the cap, matched no plan, and
+   * the formatter degraded to raw digits — which reads as the formatting breaking.
+   */
+  it("permits a complete national number", () => {
+    expect(isTooLong("7322846454", "US")).toBe(false);
+    expect(isTooLong("(732) 284-6454", "US")).toBe(false);
+  });
+
+  it("rejects a national number one digit past the plan", () => {
+    expect(isTooLong("73228464544", "US")).toBe(true);
+    expect(isTooLong("732284645444", "US")).toBe(true);
+  });
+
+  it("permits a partial number so it can still be typed", () => {
+    for (const partial of ["7", "73", "732", "73228", "732284645"]) {
+      expect(isTooLong(partial, "US"), `"${partial}" should be typeable`).toBe(false);
+    }
+  });
+
+  it("uses the country's own plan, not one global limit", () => {
+    // Eleven digits is too long for the US and perfectly normal in GB.
+    expect(isTooLong("07911123456", "GB")).toBe(false);
+    expect(isTooLong("07911123456", "US")).toBe(true);
+  });
+
+  it("takes the limit from the prefix when the number carries one", () => {
+    expect(isTooLong("+447911123456", "US")).toBe(false);
+    expect(isTooLong("+4479111234567890", "US")).toBe(true);
+  });
+
+  it("treats an unparseable fragment as typeable rather than too long", () => {
+    // Blocking the keystroke here would stop someone correcting a typo.
+    for (const odd of ["", "   ", "+", "abc", "((("]) {
+      expect(isTooLong(odd, "US"), `"${odd}"`).toBe(false);
+    }
   });
 });
