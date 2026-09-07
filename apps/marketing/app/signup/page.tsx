@@ -9,6 +9,7 @@ import { signUpAction } from "../actions";
 import type { FormErrorCode } from "../actions";
 import { SiteHeader } from "../_components/site-header";
 import { PasswordField } from "../_components/password-field";
+import { CountrySelect } from "../_components/country-select";
 
 export const metadata = { title: "Start a subscription — PorterDirect" };
 
@@ -21,6 +22,7 @@ const MESSAGES: Partial<Record<FormErrorCode, string>> = {
   "host-taken": "That domain is already connected to another account.",
   "invalid-name": "Enter your company name.",
   "unknown-plan": "Choose a plan to continue.",
+  "invalid-country": "Choose the country you operate in.",
   "rate-limited": "Too many attempts. Wait a moment and try again.",
   unknown: "Something went wrong. Please try again.",
 };
@@ -118,6 +120,13 @@ export default async function SignUp({
               />
               <span className="hint">Shown to your customers on tracking pages.</span>
             </div>
+
+            <CountrySelect
+              name="country"
+              label="Where do you operate?"
+              defaultValue={params.country ?? "US"}
+              hint="Sets how phone numbers and addresses are read for your team. Changeable later."
+            />
 
             <div className="field">
               <label htmlFor="host">Your dispatch domain</label>

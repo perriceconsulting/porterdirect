@@ -1010,3 +1010,41 @@ th.num {
 input[aria-invalid="true"] {
   border-color: var(--accent);
 }
+
+/* A postal code is short; a field sized for a street address makes it look like input
+   is missing. */
+.field-short input {
+  max-width: 12rem;
+}
+/* Address lines stack, as they would on a label. */
+.addr {
+  display: grid;
+  justify-items: end;
+  text-align: right;
+}
+
+@media (min-width: 900px) {
+  /* Customer spans both columns so the two ADDRESSES start on the same row. Left in
+     column one it pushed the pickup block down while the drop-off began higher, and the
+     pair read as misaligned rather than paired. */
+  .group-customer {
+    grid-column: 1 / -1;
+  }
+  .group-pickup {
+    grid-column: 1;
+  }
+  .group-dropoff {
+    grid-column: 2;
+  }
+  /* BOTH lose the stacked layout's rule, not just one.
+     Removing it from the drop-off alone left the pickup carrying padding-top from
+     `.field-group + .field-group`, so the two blocks sat 22px out of line — a pair that
+     is meant to read as one row. Separation from the Customer block comes from the
+     shared margin instead. */
+  .field-group.group-pickup,
+  .field-group.group-dropoff {
+    border-top: none;
+    padding-top: 0;
+    margin-top: 1.6rem;
+  }
+}

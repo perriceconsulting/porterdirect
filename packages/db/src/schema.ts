@@ -284,8 +284,36 @@ export const orders = pgTable(
     customerLastName: text("customer_last_name").notNull(),
     customerPhone: text("customer_phone"),
 
-    pickupAddress: text("pickup_address").notNull(),
-    dropoffAddress: text("dropoff_address").notNull(),
+
+    /**
+     * Addresses in PARTS, not one free-text line.
+     *
+     * A dispatch platform has to answer "which jobs are in this postcode", print a
+     * label, hand coordinates to a router and check a serviceable area. None of that is
+     * possible by splitting a free-text line after the fact, and every attempt to do so
+     * fails on the addresses that matter — the unusual ones.
+     *
+     * Named generically (`region`, `postal_code`) rather than `state` and `zip`: a
+     * column called `state` forces every non-US operator to put something that is not a
+     * state into it, and that vocabulary then spreads into queries and exports.
+     *
+     * Country is stored PER ADDRESS rather than taken from the tenant, because freight
+     * runs cross borders and a pickup may not be in the operator's own country.
+     */
+    pickupLine1: text("pickup_line1").notNull(),
+    pickupLine2: text("pickup_line2"),
+    pickupCity: text("pickup_city").notNull(),
+    pickupRegion: text("pickup_region"),
+    pickupPostalCode: text("pickup_postal_code"),
+    pickupCountry: text("pickup_country").notNull(),
+
+    dropoffLine1: text("dropoff_line1").notNull(),
+    dropoffLine2: text("dropoff_line2"),
+    dropoffCity: text("dropoff_city").notNull(),
+    dropoffRegion: text("dropoff_region"),
+    dropoffPostalCode: text("dropoff_postal_code"),
+    dropoffCountry: text("dropoff_country").notNull(),
+
     notes: text("notes"),
 
     /** Quoted to the customer, in cents. */
@@ -312,6 +340,8 @@ export const orders = pgTable(
     // The dispatch board's query: this tenant's orders, newest first.
     tenantStatusIdx: index("orders_tenant_status_idx").on(t.tenantId, t.status),
     assignedIdx: index("orders_assigned_idx").on(t.assignedUserId),
+    // The query a dispatcher actually runs: this tenant's jobs going to a given area.
+    dropoffAreaIdx: index("orders_dropoff_area_idx").on(t.tenantId, t.dropoffPostalCode),
   }),
 );
 

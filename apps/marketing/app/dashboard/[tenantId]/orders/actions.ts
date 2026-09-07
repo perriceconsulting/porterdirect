@@ -12,7 +12,7 @@ import { revalidatePath } from "next/cache";
 import { isRedirectError } from "@porterdirect/auth";
 import { IllegalTransitionError, type OrderStatus, type OrderType } from "@porterdirect/orders";
 import { parseUsdToCents } from "@porterdirect/billing";
-import type { CountryCode } from "@porterdirect/contact";
+import type { Address, CountryCode } from "@porterdirect/contact";
 import { requireConsole } from "../../../../lib/console";
 import { OrderValidationError, createOrder, transitionOrder } from "../../../../lib/orders";
 
@@ -37,6 +37,23 @@ const ORDER_STATUSES: readonly OrderStatus[] = [
 function field(data: FormData, key: string): string {
   const v = data.get(key);
   return typeof v === "string" ? v.trim() : "";
+}
+
+/**
+ * Read one address out of the form.
+ *
+ * Country falls back to the TENANT's, so an operator entering local jobs never has to
+ * state it — while a cross-border freight run can still override it per address.
+ */
+function addressFrom(data: FormData, prefix: string, tenantCountry: string): Address {
+  return {
+    line1: field(data, `${prefix}Line1`),
+    line2: field(data, `${prefix}Line2`) || null,
+    city: field(data, `${prefix}City`),
+    region: field(data, `${prefix}Region`) || null,
+    postalCode: field(data, `${prefix}PostalCode`) || null,
+    country: field(data, `${prefix}Country`) || tenantCountry,
+  };
 }
 
 export async function createOrderAction(data: FormData): Promise<void> {
@@ -72,8 +89,8 @@ export async function createOrderAction(data: FormData): Promise<void> {
       customerLastName: field(data, "customerLastName"),
       customerPhone: field(data, "customerPhone"),
       country: tenant.defaultCountry as CountryCode,
-      pickupAddress: field(data, "pickupAddress"),
-      dropoffAddress: field(data, "dropoffAddress"),
+      pickup: addressFrom(data, "pickup", tenant.defaultCountry),
+      dropoff: addressFrom(data, "dropoff", tenant.defaultCountry),
       notes: field(data, "notes"),
       priceCents,
       scheduledFor,

@@ -8,7 +8,7 @@
 import { notFound } from "next/navigation";
 import { can } from "@porterdirect/auth";
 import { formatUsdCents } from "@porterdirect/billing";
-import { formatPhone, type CountryCode } from "@porterdirect/contact";
+import { formatAddressLines, formatPhone, type CountryCode } from "@porterdirect/contact";
 import {
   STATUS_LABELS,
   TYPE_LABELS,
@@ -20,7 +20,12 @@ import { SiteHeader } from "../../../../_components/site-header";
 import { signOutAction } from "../../../../actions";
 import { transitionOrderAction } from "../actions";
 import { requireConsole } from "../../../../../lib/console";
-import { findOrder, listOrderEvents } from "../../../../../lib/orders";
+import {
+  dropoffAddressOf,
+  findOrder,
+  listOrderEvents,
+  pickupAddressOf,
+} from "../../../../../lib/orders";
 
 export const dynamic = "force-dynamic";
 
@@ -103,11 +108,21 @@ export default async function OrderDetail({
                 ) : null}
                 <li>
                   <span className="k">Pick up</span>
-                  <span className="v">{order.pickupAddress}</span>
+                  {/* Rendered line by line, in the order that country writes them — a
+                      label read off a parcel has to look native to whoever reads it. */}
+                  <span className="v addr">
+                    {formatAddressLines(pickupAddressOf(order)).map((line) => (
+                      <span key={line}>{line}</span>
+                    ))}
+                  </span>
                 </li>
                 <li>
                   <span className="k">Deliver to</span>
-                  <span className="v">{order.dropoffAddress}</span>
+                  <span className="v addr">
+                    {formatAddressLines(dropoffAddressOf(order)).map((line) => (
+                      <span key={line}>{line}</span>
+                    ))}
+                  </span>
                 </li>
                 {order.scheduledFor ? (
                   <li>

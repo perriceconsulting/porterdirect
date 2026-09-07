@@ -21,13 +21,15 @@ import { eq } from "drizzle-orm";
 import Stripe from "stripe";
 import { createDbClient, tenantMembers, tenants, type Db } from "@porterdirect/db";
 import { assignableTenantHost, type HostRejection } from "@porterdirect/auth";
+import { isSupportedCountry } from "@porterdirect/contact";
 import { createStripeClient, getPlan, type PlanId } from "@porterdirect/billing";
 
 export type ProvisionFailure =
   | { readonly kind: "invalid-host"; readonly reason: HostRejection }
   | { readonly kind: "host-taken" }
   | { readonly kind: "invalid-name" }
-  | { readonly kind: "unknown-plan" };
+  | { readonly kind: "unknown-plan" }
+  | { readonly kind: "invalid-country" };
 
 export type ProvisionResult =
   | { readonly ok: true; readonly tenantId: string; readonly stripeCustomerId: string }
@@ -39,6 +41,12 @@ export interface ProvisionInput {
   readonly ownerUserId: string;
   readonly ownerEmail: string;
   readonly planId: string;
+  /**
+   * ISO 3166-1 alpha-2. Decides how this operator's phone numbers are read and which
+   * address labels their dispatchers see, so it is STATED at signup rather than left to
+   * a column default that silently makes every tenant American.
+   */
+  readonly country: string;
 }
 
 function stripe(): Stripe {
@@ -56,6 +64,10 @@ export async function provisionTenant(input: ProvisionInput): Promise<ProvisionR
   const assignment = assignableTenantHost(input.host);
   if (!assignment.ok) {
     return { ok: false, failure: { kind: "invalid-host", reason: assignment.reason } };
+  }
+
+  if (!isSupportedCountry(input.country)) {
+    return { ok: false, failure: { kind: "invalid-country" } };
   }
 
   let planId: PlanId;
@@ -79,7 +91,7 @@ export async function provisionTenant(input: ProvisionInput): Promise<ProvisionR
   // 1. Tenant.
   const [tenant] = await db
     .insert(tenants)
-    .values({ name, primaryHost: assignment.host })
+    .values({ name, primaryHost: assignment.host, defaultCountry: input.country.toUpperCase() })
     .returning({ id: tenants.id });
   const tenantId = tenant!.id;
 

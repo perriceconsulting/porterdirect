@@ -28,6 +28,7 @@ export type FormErrorCode =
   | "host-taken"
   | "invalid-name"
   | "unknown-plan"
+  | "invalid-country"
   | "rate-limited"
   | "checkout-failed"
   | "invalid-token"
@@ -177,11 +178,12 @@ export async function signUpAction(data: FormData): Promise<void> {
   const password = str(data, "password");
   const company = str(data, "company");
   const host = str(data, "host");
+  const country = str(data, "country");
   const planId = str(data, "plan");
   const seatsRaw = str(data, "seats");
 
-  const keep = { email, company, host, plan: planId, seats: seatsRaw, firstName, lastName };
-  if (!firstName || !lastName || !email || !password || !company || !host || !planId) {
+  const keep = { email, company, host, plan: planId, seats: seatsRaw, firstName, lastName, country };
+  if (!firstName || !lastName || !email || !password || !company || !host || !planId || !country) {
     back("/signup", "missing-fields", keep);
   }
 
@@ -218,6 +220,7 @@ export async function signUpAction(data: FormData): Promise<void> {
     ownerUserId: userId,
     ownerEmail: email,
     planId,
+    country,
   });
 
   if (!provisioned.ok) {

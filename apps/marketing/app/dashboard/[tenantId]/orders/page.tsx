@@ -12,10 +12,11 @@ import { STATUS_LABELS, TYPE_LABELS, isTerminal, type OrderStatus, type OrderTyp
 import { formatPhone, type CountryCode } from "@porterdirect/contact";
 import { SiteHeader } from "../../../_components/site-header";
 import { PhoneField } from "../../../_components/phone-field";
+import { AddressFields } from "../../../_components/address-fields";
 import { signOutAction } from "../../../actions";
 import { createOrderAction } from "./actions";
 import { requireConsole } from "../../../../lib/console";
-import { listOrders } from "../../../../lib/orders";
+import { dropoffSummary, listOrders } from "../../../../lib/orders";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Dispatch — PorterDirect" };
@@ -114,7 +115,7 @@ export default async function OrdersBoard({
                           <span className="hint">
                             {o.customerPhone
                               ? formatPhone(o.customerPhone, tenant.defaultCountry as CountryCode)
-                              : o.dropoffAddress}
+                              : dropoffSummary(o)}
                           </span>
                         </td>
                         <td>{TYPE_LABELS[o.type]}</td>
@@ -205,19 +206,17 @@ export default async function OrdersBoard({
                   />
                 </fieldset>
 
-                <fieldset className="field-group group-route">
-                  <legend>Route</legend>
+                <AddressFields
+                  prefix="pickup"
+                  legend="Pick up from"
+                  country={tenant.defaultCountry}
+                />
 
-                  <div className="field">
-                    <label htmlFor="pickupAddress">Pick up from</label>
-                    <input id="pickupAddress" name="pickupAddress" required />
-                  </div>
-
-                  <div className="field">
-                    <label htmlFor="dropoffAddress">Deliver to</label>
-                    <input id="dropoffAddress" name="dropoffAddress" required />
-                  </div>
-                </fieldset>
+                <AddressFields
+                  prefix="dropoff"
+                  legend="Deliver to"
+                  country={tenant.defaultCountry}
+                />
 
                 <fieldset className="field-group group-job">
                   <legend>Job</legend>

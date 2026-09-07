@@ -29,6 +29,7 @@ agencies) who run the physical work under their own brand + domain.
 | Authorization policy | [packages/auth/src/permissions.ts](packages/auth/src/permissions.ts) | The role→permission matrix; pure, exhaustive, no inheritance chain |
 | Order lifecycle | [packages/orders/src/order-state.ts](packages/orders/src/order-state.ts) | Explicit transition table; terminal is terminal, no skipping, location bound to the order |
 | Phone handling | [packages/contact/src/phone.ts](packages/contact/src/phone.ts) | E.164 stored, formatted at point of use; libphonenumber metadata, never hand-rolled |
+| Postal addresses | [packages/contact/src/address.ts](packages/contact/src/address.ts) | Stored in parts; labels, requirements and line order vary by country |
 | Password policy | [packages/auth/src/password-policy.ts](packages/auth/src/password-policy.ts) | NIST SP 800-63B: length + breach checking, deliberately NO composition rules |
 | Host → tenant classification | [packages/auth/src/tenant-host.ts](packages/auth/src/tenant-host.ts) | One normalisation, so every surface agrees what "same host" means |
 
@@ -49,6 +50,15 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
 - **Webhook double-apply.** Stripe re-delivers events; without idempotency a retry applies
   twice. `processed_webhook_events` + `handleStripeEvent` make it exactly-once.
 - **Money as float.** All amounts are integer cents. Never introduce floating-point money.
+- **A locale that is only a column default is not detected, it is assumed.**
+  `tenants.default_country` defaulted to `US` and nothing could set it, so every tenant
+  silently got US phone rules and US address labels. A default nobody can change is a
+  hardcoded value wearing a configuration costume.
+- **An address stored as one line cannot be dispatched from.** "Which jobs are in this
+  postcode", printing a label, geocoding for a router, checking a serviceable area —
+  none survive splitting free text after the fact, and every attempt fails on the
+  unusual addresses that matter. Store parts; name them `region`/`postal_code`, never
+  `state`/`zip`, or every non-US operator puts a non-state into a column called state.
 - **A phone number stored as typed is several customers.** "(213) 373-4253",
   "213-373-4253" and "2133734253" match nothing when a driver searches, and cannot be
   handed to a masked-calling provider. Store E.164, format at point of use, and REFUSE
@@ -671,3 +681,27 @@ live-map reactivity.
     number". After a preposition it would need an article that is right for "the United
     States" and wrong for "France".
   - Ratchets: tests = 289 + 6 PHAST + 27 e2e; client components = 2; lint = 0.
+
+- **2026-09-07 — Structured addresses, and a locale that is actually chosen.**
+  - Asked how the locale was detected, the honest answer was that it **was not**.
+    `tenants.default_country` defaulted to `US` and nothing could change it, so both
+    tenants read `US` because that is the column default — not because anything decided.
+    A country picker now appears at signup, sourced from the phone metadata and sorted by
+    DISPLAY NAME (nobody scans for "GB" under G expecting United Kingdom).
+  - Addresses are stored in PARTS. Named `region` and `postal_code`, not `state` and
+    `zip`: a column called `state` forces every non-US operator to put something that is
+    not a state into it, and that vocabulary spreads into queries and exports.
+  - Country is stored **per address**, not taken from the tenant — freight runs cross
+    borders, and a pickup may not be in the operator's own country.
+  - Labels, requirements and LINE ORDER vary by country: the US wants a State and ZIP and
+    prints "Washington, DC 20500"; the UK does not require a county and prints the
+    postcode alone on the last line. An unlisted country falls back to neutral wording
+    rather than being shown American labels.
+  - Postal code SHAPE is deliberately not validated. Formats change, and a regex that
+    rejects a real new postcode blocks a real delivery. Presence is our business;
+    correctness is the postal service's.
+  - Two layout bugs, both found by measuring rather than looking: `nth-of-type` placement
+    broke as soon as a group moved, and removing the stacked rule from only ONE of the
+    paired address blocks left them 22px out of line. Positional selectors are fragile;
+    a pair meant to read as one row must be styled identically.
+  - Ratchets: tests = **310** + 6 PHAST + 27 e2e; client components = 2; lint = 0.

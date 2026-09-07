@@ -13,7 +13,14 @@ import {
   type OrderStatus,
   type OrderType,
 } from "@porterdirect/orders";
-import { parsePhone, type CountryCode } from "@porterdirect/contact";
+import {
+  addressLabels,
+  formatAddressInline,
+  missingAddressParts,
+  parsePhone,
+  type Address,
+  type CountryCode,
+} from "@porterdirect/contact";
 
 export interface CreateOrderInput {
   readonly tenantId: string;
@@ -24,8 +31,8 @@ export interface CreateOrderInput {
   readonly customerPhone?: string;
   /** The tenant's country, used to read a nationally-formatted number. */
   readonly country: CountryCode;
-  readonly pickupAddress: string;
-  readonly dropoffAddress: string;
+  readonly pickup: Address;
+  readonly dropoff: Address;
   readonly notes?: string;
   readonly priceCents: number;
   /**
@@ -63,8 +70,17 @@ export async function createOrder(db: Db, input: CreateOrderInput): Promise<Orde
   if (!input.customerLastName.trim()) {
     throw new OrderValidationError("Customer last name is required.");
   }
-  if (!input.pickupAddress.trim()) throw new OrderValidationError("Pickup address is required.");
-  if (!input.dropoffAddress.trim()) throw new OrderValidationError("Drop-off address is required.");
+  // Each address is checked against ITS OWN country's rules — a US pickup needs a state
+  // and ZIP, a UK drop-off does not need a county. Reporting the missing FIELDS by their
+  // local names beats "address is required" when four inputs are on screen.
+  for (const [label, addr] of [["Pickup", input.pickup], ["Drop-off", input.dropoff]] as const) {
+    const missing = missingAddressParts(addr, addr.country);
+    if (missing.length > 0) {
+      const labels = addressLabels(addr.country);
+      const names = missing.map((part) => labels[part]).join(", ");
+      throw new OrderValidationError(`${label} address needs: ${names}.`);
+    }
+  }
   if (input.type === "scheduled_courier" && !input.scheduledFor) {
     // The product brief defines this type as an exact-time-window run. Accepting one
     // without a window puts a job on the board nobody can schedule against.
@@ -104,8 +120,18 @@ export async function createOrder(db: Db, input: CreateOrderInput): Promise<Orde
           // Refused rather than stored raw when unparseable — this is the field a
           // driver dials.
           customerPhone: normalizedPhone,
-          pickupAddress: input.pickupAddress.trim(),
-          dropoffAddress: input.dropoffAddress.trim(),
+          pickupLine1: input.pickup.line1.trim(),
+          pickupLine2: input.pickup.line2?.trim() || null,
+          pickupCity: input.pickup.city.trim(),
+          pickupRegion: input.pickup.region?.trim() || null,
+          pickupPostalCode: input.pickup.postalCode?.trim() || null,
+          pickupCountry: input.pickup.country,
+          dropoffLine1: input.dropoff.line1.trim(),
+          dropoffLine2: input.dropoff.line2?.trim() || null,
+          dropoffCity: input.dropoff.city.trim(),
+          dropoffRegion: input.dropoff.region?.trim() || null,
+          dropoffPostalCode: input.dropoff.postalCode?.trim() || null,
+          dropoffCountry: input.dropoff.country,
           notes: input.notes?.trim() || null,
           priceCents: input.priceCents,
           scheduledFor: input.scheduledFor ?? null,
@@ -282,4 +308,33 @@ export async function captureTotal(
     .where(and(eq(orders.tenantId, args.tenantId), eq(orders.id, args.orderId)))
     .returning();
   return updated!;
+}
+
+/** Rebuild the pickup address from a row, for display. */
+export function pickupAddressOf(order: Order): Address {
+  return {
+    line1: order.pickupLine1,
+    line2: order.pickupLine2,
+    city: order.pickupCity,
+    region: order.pickupRegion,
+    postalCode: order.pickupPostalCode,
+    country: order.pickupCountry,
+  };
+}
+
+/** Rebuild the drop-off address from a row, for display. */
+export function dropoffAddressOf(order: Order): Address {
+  return {
+    line1: order.dropoffLine1,
+    line2: order.dropoffLine2,
+    city: order.dropoffCity,
+    region: order.dropoffRegion,
+    postalCode: order.dropoffPostalCode,
+    country: order.dropoffCountry,
+  };
+}
+
+/** One-line drop-off, for a table cell. */
+export function dropoffSummary(order: Order): string {
+  return formatAddressInline(dropoffAddressOf(order));
 }
