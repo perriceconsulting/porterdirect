@@ -23,6 +23,9 @@ agencies) who run the physical work under their own brand + domain.
 | Stripe client + test-mode guard | [packages/billing/src/stripe-env.ts](packages/billing/src/stripe-env.ts) | Mirrors [scripts/guard-stripe-env.sh](scripts/guard-stripe-env.sh) |
 | Stripe dev-setup procedure | [docs/stripe-dev-setup.md](docs/stripe-dev-setup.md) + [scripts/stripe-doctor.sh](scripts/stripe-doctor.sh) | Instantiates global "Third-party sandboxes" checklist |
 | Env contract | [.env.example](.env.example) | Copy to `.env.local` (gitignored), test-mode only |
+| DB client / connection | [packages/db/src/client.ts](packages/db/src/client.ts) | neon-http driver; no transactions, so the webhook path uses single atomic statements |
+| DB migrations | [packages/db/drizzle/](packages/db/drizzle/) | GENERATED from `schema.ts` via `npm run db:generate` — never hand-write DDL |
+| Env file reading | [scripts/lib/load-env.sh](scripts/lib/load-env.sh) | The only place a secrets file is read; parses as data, never sourced |
 
 Local copies that must **reconcile back** (DOSI-S caveat): the `subscriptions` DB row
 mirrors the Stripe Subscription (reconciled by `webhook.ts`); `STRIPE_PRICE_*` env vars
@@ -155,3 +158,27 @@ live-map reactivity.
     postcss advisories fixable only by a v16 major — deferred deliberately, not missed.
   - Ratchets: unit tests = **53** (was 27); client components = 0; lint = still not
     configured. Never lower to pass a build.
+
+- **2026-09-07 — Neon wired; webhook persistence is real and atomic.**
+  - Added: Neon project `porterdirect` (`withered-art-75776831`, pg17, us-east-2) under
+    the Perrice IT org. `packages/db/src/client.ts` (neon-http driver), drizzle-kit
+    migrations **generated from `schema.ts`** — the DB derives from the canonical
+    schema rather than hand-written DDL that would drift from the types.
+  - `DbWebhookEventStore.claimEvent` is `INSERT … ON CONFLICT DO NOTHING RETURNING`:
+    one statement, with Postgres resolving the race in the primary key. Proven against
+    the real database — ten concurrent claims, exactly one winner. This is the point at
+    which the atomic-claim port stops being a promise and becomes an enforced property.
+  - `DbSubscriptionSink` resolves the tenant from `stripe_customer_id` BEFORE writing
+    and throws `UnknownTenantError` if there is none. An unscoped `subscriptions` row is
+    the tenant-bleed landmine; a loud 500 that Stripe retries beats a quietly
+    mis-attributed row.
+  - The route now picks DB adapters when `DATABASE_URL` is present and falls back to
+    in-memory with a loud warning otherwise, so the HTTP path stays exercisable offline
+    while a deployed environment can never silently take the non-durable branch.
+  - Ratchets: unit + integration tests = **59** (was 53); client components = 0; lint
+    still not configured.
+  - Left alone (with reason): the 6 Stripe Prices are STILL not created — the apply was
+    blocked by the sandbox, and it is the one step that needs a human. `STRIPE_PRICE_SMS_METERED`
+    is deliberately unset: the catalog carries no amount for it (pass-through metered),
+    the product does not send SMS yet, and inventing a rate would be inventing pricing.
+    Verified that leaving it unset breaks nothing.

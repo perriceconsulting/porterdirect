@@ -21,7 +21,7 @@ import {
   handleStripeEvent,
   verifyStripeEvent,
 } from "@porterdirect/billing";
-import { subscriptionSink, webhookEventStore } from "../../../../lib/webhook-adapters";
+import { getWebhookAdapters } from "../../../../lib/webhook-adapters";
 
 // Node runtime: Stripe's synchronous constructEvent needs Node crypto, not Edge.
 export const runtime = "nodejs";
@@ -65,9 +65,10 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   try {
+    const { store, sink } = getWebhookAdapters();
     const result = await handleStripeEvent(event, {
-      store: webhookEventStore,
-      sink: subscriptionSink,
+      store,
+      sink,
       resolvePlanId: createPlanIdResolver(process.env),
     });
     console.log(`[stripe-webhook] ${event.type} ${event.id} -> ${result.status}`);

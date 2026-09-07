@@ -17,6 +17,7 @@ import type {
   TenantSubscription,
   WebhookEventStore,
 } from "@porterdirect/billing";
+import { createDbAdapters } from "./webhook-adapters-db";
 
 export interface RecordedUpsert {
   readonly subscription: TenantSubscription;
@@ -97,3 +98,30 @@ export const subscriptionSink: InMemorySubscriptionSink =
 
 globalForAdapters[storeKey] = webhookEventStore;
 globalForAdapters[sinkKey] = subscriptionSink;
+
+/**
+ * Choose the persistence for the webhook path.
+ *
+ * DATABASE_URL present -> the real tables, where `claimEvent` is a genuine atomic
+ * INSERT and idempotency survives a restart. Absent -> the in-memory pair above, which
+ * exists so the HTTP/signature path is exercisable without infrastructure. The
+ * in-memory ledger is per-process and dies on restart, so it is NOT a durable
+ * exactly-once guarantee — the warning below is deliberate, and a deployed environment
+ * must never take this branch.
+ */
+export function getWebhookAdapters(): {
+  store: WebhookEventStore;
+  sink: SubscriptionSink;
+  durable: boolean;
+} {
+  const url = process.env.DATABASE_URL;
+  if (url) {
+    const { store, sink } = createDbAdapters(url);
+    return { store, sink, durable: true };
+  }
+  console.warn(
+    "[stripe-webhook] DATABASE_URL is not set — using the IN-MEMORY idempotency " +
+      "ledger. Idempotency is per-process and lost on restart. Never deploy this.",
+  );
+  return { store: webhookEventStore, sink: subscriptionSink, durable: false };
+}
