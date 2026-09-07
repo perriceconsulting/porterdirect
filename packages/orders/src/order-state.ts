@@ -196,6 +196,28 @@ export const STATUS_LABELS: Record<OrderStatus, string> = {
   failed: "Failed",
 };
 
+/**
+ * How a status should READ at a glance: succeeded, went wrong, or still running.
+ *
+ * Lives beside the labels, and for the same reason. The dispatch board and the order
+ * page had each decided this for themselves and had already drifted: the board coloured
+ * a failed job amber, the order page coloured it the same success green as a delivered
+ * one, because it was branching on `isTerminal` — which is true of delivered, cancelled
+ * AND failed. Green is not a neutral colour; on a job that did not get there it is a
+ * false statement, and one only a person looking at the page could catch.
+ *
+ * Tone is deliberately about OUTCOME, not about whether the job is finished. "Cancelled"
+ * is not a failure of the work — nobody attempted it — so it reads neutral rather than
+ * alarming, which matches the reason sets in `closure.ts`.
+ */
+export type StatusTone = "good" | "warn" | "neutral";
+
+export function statusTone(status: OrderStatus): StatusTone {
+  if (status === "delivered") return "good";
+  if (status === "failed") return "warn";
+  return "neutral";
+}
+
 export const TYPE_LABELS: Record<OrderType, string> = {
   fixed_pickup: "Pickup and deliver",
   shop_in_store: "Shop in store",

@@ -71,6 +71,13 @@
       "when": 1788794833211,
       "tag": "0009_damp_epoch",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788796890835,
+      "tag": "0010_thick_hemingway",
+      "breakpoints": true
     }
   ]
 }

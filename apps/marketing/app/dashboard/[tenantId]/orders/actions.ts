@@ -14,7 +14,12 @@ import { IllegalTransitionError, type OrderStatus, type OrderType } from "@porte
 import { parseUsdToCents } from "@porterdirect/billing";
 import type { Address, CountryCode } from "@porterdirect/contact";
 import { requireConsole } from "../../../../lib/console";
-import { OrderValidationError, createOrder, transitionOrder } from "../../../../lib/orders";
+import {
+  OrderValidationError,
+  createOrder,
+  redispatchOrder,
+  transitionOrder,
+} from "../../../../lib/orders";
 
 const ORDER_TYPES: readonly OrderType[] = [
   "fixed_pickup",
@@ -121,7 +126,15 @@ export async function transitionOrderAction(data: FormData): Promise<void> {
   const detail = `/dashboard/${tenantId}/orders/${orderId}`;
 
   try {
-    await transitionOrder(db, { tenantId, orderId, to, actorUserId: userId, note: field(data, "note") });
+    await transitionOrder(db, {
+      tenantId,
+      orderId,
+      to,
+      actorUserId: userId,
+      note: field(data, "note"),
+      // Only meaningful when closing; the service refuses a close without one.
+      reason: field(data, "reason") || undefined,
+    });
   } catch (err) {
     if (isRedirectError(err)) throw err;
     if (err instanceof IllegalTransitionError || err instanceof OrderValidationError) {
@@ -134,4 +147,34 @@ export async function transitionOrderAction(data: FormData): Promise<void> {
 
   revalidatePath(detail);
   redirect(detail);
+}
+
+/**
+ * Raise a fresh attempt at a failed job.
+ *
+ * Requires `orders:create`, not `orders:update:assigned`: re-dispatching commits the
+ * operator to doing the work again, which is a dispatch decision rather than a driver
+ * one.
+ */
+export async function redispatchOrderAction(data: FormData): Promise<void> {
+  const tenantId = field(data, "tenantId");
+  const orderId = field(data, "orderId");
+  if (!tenantId || !orderId) redirect("/dashboard");
+
+  const { db, userId } = await requireConsole(tenantId, "orders:create");
+  const detail = `/dashboard/${tenantId}/orders/${orderId}`;
+
+  let created;
+  try {
+    created = await redispatchOrder(db, { tenantId, orderId, actorUserId: userId });
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+    if (err instanceof OrderValidationError) {
+      redirect(`${detail}?error=${encodeURIComponent(err.message)}`);
+    }
+    throw err;
+  }
+
+  revalidatePath(`/dashboard/${tenantId}/orders`);
+  redirect(`/dashboard/${tenantId}/orders/${created.id}`);
 }

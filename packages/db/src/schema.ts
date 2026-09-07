@@ -328,6 +328,27 @@ export const orders = pgTable(
       onDelete: "set null",
     }),
 
+    /**
+     * Why a job ended without delivery. Set only for `cancelled` and `failed`.
+     *
+     * Stored as text validated against a closed set in the domain layer rather than a
+     * database enum: the reason list will change as operators tell us what actually goes
+     * wrong, and a migration per new reason would discourage adding them — which would
+     * quietly push people back to free text.
+     */
+    closureReason: text("closure_reason"),
+    /** Free text ALONGSIDE the reason, never instead of it. */
+    closureNote: text("closure_note"),
+
+    /**
+     * The failed job this one re-attempts.
+     *
+     * A second attempt is a NEW order, not a reopened one: terminal has to stay terminal
+     * or the first attempt's history is rewritten and its failure disappears from the
+     * numbers. The link preserves both.
+     */
+    redispatchedFromOrderId: uuid("redispatched_from_order_id"),
+
     scheduledFor: timestamp("scheduled_for", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -342,6 +363,9 @@ export const orders = pgTable(
     assignedIdx: index("orders_assigned_idx").on(t.assignedUserId),
     // The query a dispatcher actually runs: this tenant's jobs going to a given area.
     dropoffAreaIdx: index("orders_dropoff_area_idx").on(t.tenantId, t.dropoffPostalCode),
+    // "What is going wrong, and how often" — the query the reason field exists for.
+    closureIdx: index("orders_closure_idx").on(t.tenantId, t.closureReason),
+    redispatchIdx: index("orders_redispatch_idx").on(t.redispatchedFromOrderId),
   }),
 );
 

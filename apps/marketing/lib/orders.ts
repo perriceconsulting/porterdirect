@@ -9,7 +9,11 @@
 import { and, desc, eq } from "drizzle-orm";
 import { orderEvents, orders, users, type Db, type Order } from "@porterdirect/db";
 import {
+  CLOSURE_REASON_LABELS,
   assertTransition,
+  isRedispatchable,
+  isValidReasonFor,
+  type ClosureReason,
   type OrderStatus,
   type OrderType,
 } from "@porterdirect/orders";
@@ -229,6 +233,8 @@ export async function transitionOrder(
     to: OrderStatus;
     actorUserId: string;
     note?: string;
+    /** Required when closing a job as cancelled or failed. */
+    reason?: string;
   },
 ): Promise<Order> {
   const order = await findOrder(db, args.tenantId, args.orderId);
@@ -237,12 +243,30 @@ export async function transitionOrder(
   // Throws on an illegal move — including any move out of a terminal state.
   assertTransition(order.type, order.status, args.to);
 
+  // A job that ends without delivery must say WHY. Free text cannot be counted, and
+  // counting is the point: dispatch efficiency cannot be improved without knowing which
+  // failures are frequent and whose fault they are.
+  const closing = args.to === "cancelled" || args.to === "failed";
+  if (closing) {
+    if (!args.reason) {
+      throw new OrderValidationError(`Choose a reason before marking this job ${args.to}.`);
+    }
+    if (!isValidReasonFor(args.to, args.reason)) {
+      throw new OrderValidationError(
+        `"${args.reason}" is not a reason a job can be ${args.to}.`,
+      );
+    }
+  }
+
   const [updated] = await db
     .update(orders)
     .set({
       status: args.to,
       updatedAt: new Date(),
       ...(args.to === "delivered" ? { deliveredAt: new Date() } : {}),
+      ...(closing
+        ? { closureReason: args.reason ?? null, closureNote: args.note?.trim() || null }
+        : {}),
     })
     // Scoped by tenant AND by the status we read, so a concurrent transition loses
     // rather than both succeeding — the same atomic-claim shape as the webhook ledger.
@@ -267,7 +291,12 @@ export async function transitionOrder(
     actorUserId: args.actorUserId,
     fromStatus: order.status,
     toStatus: args.to,
-    note: args.note?.trim() || null,
+    // The reason leads the audit line; a typed note follows it when there is one.
+    note: closing
+      ? [CLOSURE_REASON_LABELS[args.reason as ClosureReason], args.note?.trim()]
+          .filter(Boolean)
+          .join(" — ")
+      : args.note?.trim() || null,
   });
 
   return updated;
@@ -331,4 +360,105 @@ export function dropoffAddressOf(order: Order): Address {
     postalCode: order.dropoffPostalCode,
     country: order.dropoffCountry,
   };
+}
+
+/**
+ * Raise a fresh attempt at a failed job.
+ *
+ * A NEW order, never a reopened one. Reopening would rewrite the first attempt's history
+ * and erase its failure from the numbers — and the whole reason for recording a closure
+ * reason is that those numbers are the operator's only view of what keeps going wrong.
+ *
+ * The new job copies the details, links back to the original, and starts at `pending` so
+ * it is dispatched deliberately rather than inheriting a driver who already could not
+ * complete it.
+ */
+export async function redispatchOrder(
+  db: Db,
+  args: { tenantId: string; orderId: string; actorUserId: string },
+): Promise<Order> {
+  const original = await findOrder(db, args.tenantId, args.orderId);
+  if (!original) throw new OrderValidationError("Order not found.");
+
+  if (original.status !== "failed") {
+    throw new OrderValidationError(
+      "Only a failed job can be re-dispatched. Cancelled work is not re-attempted automatically.",
+    );
+  }
+  if (original.closureReason && !isRedispatchable(original.closureReason as ClosureReason)) {
+    throw new OrderValidationError(
+      `A job that ended "${CLOSURE_REASON_LABELS[original.closureReason as ClosureReason]}" ` +
+        `is not re-attempted. Raise a new job if the situation has changed.`,
+    );
+  }
+
+  const existing = await db
+    .select({ id: orders.id, reference: orders.reference })
+    .from(orders)
+    .where(
+      and(eq(orders.tenantId, args.tenantId), eq(orders.redispatchedFromOrderId, args.orderId)),
+    )
+    .limit(1);
+  if (existing.length > 0) {
+    // Otherwise an impatient double-click quietly puts two drivers on the same delivery.
+    throw new OrderValidationError(
+      `This job has already been re-dispatched as ${existing[0]!.reference}.`,
+    );
+  }
+
+  const created = await createOrder(db, {
+    tenantId: args.tenantId,
+    actorUserId: args.actorUserId,
+    type: original.type,
+    customerFirstName: original.customerFirstName,
+    customerLastName: original.customerLastName,
+    customerPhone: original.customerPhone ?? undefined,
+    country: original.pickupCountry as CountryCode,
+    pickup: pickupAddressOf(original),
+    dropoff: dropoffAddressOf(original),
+    priceCents: original.priceCents,
+    notes: original.notes ?? undefined,
+    scheduledFor: null,
+  });
+
+  const [linked] = await db
+    .update(orders)
+    .set({ redispatchedFromOrderId: original.id })
+    .where(and(eq(orders.tenantId, args.tenantId), eq(orders.id, created.id)))
+    .returning();
+
+  await db.insert(orderEvents).values({
+    tenantId: args.tenantId,
+    orderId: created.id,
+    actorUserId: args.actorUserId,
+    fromStatus: null,
+    toStatus: "pending",
+    note: `Re-dispatch of ${original.reference}`,
+  });
+
+  return linked!;
+}
+
+/** The follow-up raised for a failed job, if there is one. */
+export async function findRedispatch(
+  db: Db,
+  tenantId: string,
+  orderId: string,
+): Promise<Order | null> {
+  const [row] = await db
+    .select()
+    .from(orders)
+    .where(and(eq(orders.tenantId, tenantId), eq(orders.redispatchedFromOrderId, orderId)))
+    .limit(1);
+  return row ?? null;
+}
+
+/** The failed job this one re-attempts, if any. */
+export async function findRedispatchOrigin(
+  db: Db,
+  tenantId: string,
+  order: Order,
+): Promise<Order | null> {
+  if (!order.redispatchedFromOrderId) return null;
+  return findOrder(db, tenantId, order.redispatchedFromOrderId);
 }

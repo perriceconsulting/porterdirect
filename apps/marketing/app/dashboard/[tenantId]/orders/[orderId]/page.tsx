@@ -10,19 +10,26 @@ import { can } from "@porterdirect/auth";
 import { formatUsdCents } from "@porterdirect/billing";
 import { formatAddressLines, formatPhone, type CountryCode } from "@porterdirect/contact";
 import {
+  CLOSURE_REASON_LABELS,
   STATUS_LABELS,
   TYPE_LABELS,
   isLocationVisible,
+  isRedispatchable,
   isTerminal,
   nextStatuses,
+  reasonsFor,
+  statusTone,
+  type ClosureReason,
 } from "@porterdirect/orders";
 import { SiteHeader } from "../../../../_components/site-header";
 import { signOutAction } from "../../../../actions";
-import { transitionOrderAction } from "../actions";
+import { redispatchOrderAction, transitionOrderAction } from "../actions";
 import { requireConsole } from "../../../../../lib/console";
 import {
   dropoffAddressOf,
   findOrder,
+  findRedispatch,
+  findRedispatchOrigin,
   listOrderEvents,
   pickupAddressOf,
 } from "../../../../../lib/orders";
@@ -48,9 +55,14 @@ export default async function OrderDetail({
   if (!mayView) notFound();
 
   const events = await listOrderEvents(db, tenantId, orderId);
+  const redispatch = await findRedispatch(db, tenantId, orderId);
+  const origin = await findRedispatchOrigin(db, tenantId, order);
   const status = order.status;
   const type = order.type;
   const moves = can(membership.role, "orders:update:assigned") ? nextStatuses(type, status) : [];
+  // Split, because closing a job needs a reason and moving it forward does not.
+  const closers = moves.filter((m): m is "cancelled" | "failed" => m === "cancelled" || m === "failed");
+  const forward = moves.filter((m) => m !== "cancelled" && m !== "failed");
   const tracking = isLocationVisible(status);
 
   return (
@@ -73,7 +85,10 @@ export default async function OrderDetail({
               <p className="eyebrow">{tenant.name}</p>
               <h1 className="console-title">{order.reference}</h1>
             </div>
-            <span className={isTerminal(status) ? "pill" : "pill neutral"}>
+            {/* Tone by OUTCOME, from the domain. This branched on `isTerminal`, which is
+                also true of a failed job — so a job that never arrived wore the success
+                green. Nothing below the browser could see it. */}
+            <span className={statusTone(status) === "neutral" ? "pill" : `pill ${statusTone(status)}`}>
               {STATUS_LABELS[status]}
             </span>
           </div>
@@ -136,6 +151,33 @@ export default async function OrderDetail({
                   <span className="k">Price</span>
                   <span className="v">{formatUsdCents(order.priceCents)}</span>
                 </li>
+                {order.closureReason ? (
+                  <li>
+                    <span className="k">Why it ended</span>
+                    <span className="v">
+                      {CLOSURE_REASON_LABELS[order.closureReason as ClosureReason]}
+                      {order.closureNote ? ` — ${order.closureNote}` : ""}
+                    </span>
+                  </li>
+                ) : null}
+                {origin ? (
+                  <li>
+                    <span className="k">Re-attempt of</span>
+                    <span className="v">
+                      <a href={`/dashboard/${tenantId}/orders/${origin.id}`}>{origin.reference}</a>
+                    </span>
+                  </li>
+                ) : null}
+                {redispatch ? (
+                  <li>
+                    <span className="k">Re-dispatched as</span>
+                    <span className="v">
+                      <a href={`/dashboard/${tenantId}/orders/${redispatch.id}`}>
+                        {redispatch.reference}
+                      </a>
+                    </span>
+                  </li>
+                ) : null}
                 {order.notes ? (
                   <li>
                     <span className="k">Notes</span>
@@ -158,27 +200,80 @@ export default async function OrderDetail({
             <section className="panel">
               <h2 className="panel-title">Move this job</h2>
               {moves.length === 0 ? (
-                <p className="sub">
-                  {isTerminal(status)
-                    ? `This job is ${STATUS_LABELS[status].toLowerCase()}. Terminal states cannot be reopened.`
-                    : "Your role cannot move this job."}
-                </p>
+                <>
+                  <p className="sub">
+                    {isTerminal(status)
+                      ? `This job is ${STATUS_LABELS[status].toLowerCase()}. Terminal states cannot be reopened.`
+                      : "Your role cannot move this job."}
+                  </p>
+
+                  {/* A failed job is re-attempted as a NEW order, never by reopening
+                      this one — reopening would rewrite the first attempt's history and
+                      erase its failure from the operator's numbers. */}
+                  {status === "failed" &&
+                  can(membership.role, "orders:create") &&
+                  !redispatch &&
+                  (!order.closureReason ||
+                    isRedispatchable(order.closureReason as ClosureReason)) ? (
+                    <form action={redispatchOrderAction} className="form-actions">
+                      <input type="hidden" name="tenantId" value={tenantId} />
+                      <input type="hidden" name="orderId" value={orderId} />
+                      <button className="btn btn-primary" type="submit">
+                        Try again — raise a new job
+                      </button>
+                    </form>
+                  ) : null}
+                </>
               ) : (
-                <div className="moves">
-                  {moves.map((to) => (
-                    <form action={transitionOrderAction} key={to}>
+                <>
+                  <div className="moves">
+                    {forward.map((to) => (
+                      <form action={transitionOrderAction} key={to}>
+                        <input type="hidden" name="tenantId" value={tenantId} />
+                        <input type="hidden" name="orderId" value={orderId} />
+                        <input type="hidden" name="to" value={to} />
+                        <button className="btn btn-primary" type="submit">
+                          {STATUS_LABELS[to]}
+                        </button>
+                      </form>
+                    ))}
+                  </div>
+
+                  {/* Closing a job is not one click. It has to say WHY, because "nobody
+                      home" typed forty ways cannot be counted — and counting is the only
+                      way dispatch gets better. */}
+                  {closers.map((to) => (
+                    <form action={transitionOrderAction} key={to} className="close-form">
                       <input type="hidden" name="tenantId" value={tenantId} />
                       <input type="hidden" name="orderId" value={orderId} />
                       <input type="hidden" name="to" value={to} />
-                      <button
-                        className={to === "cancelled" || to === "failed" ? "btn btn-quiet" : "btn btn-primary"}
-                        type="submit"
-                      >
-                        {STATUS_LABELS[to]}
-                      </button>
+                      <div className="field">
+                        <label htmlFor={`reason-${to}`}>
+                          {to === "cancelled" ? "Cancel this job" : "Mark it failed"}
+                        </label>
+                        <select id={`reason-${to}`} name="reason" defaultValue="">
+                          <option value="" disabled>
+                            Choose a reason…
+                          </option>
+                          {reasonsFor(to).map((r) => (
+                            <option key={r} value={r}>
+                              {CLOSURE_REASON_LABELS[r]}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="field">
+                        <label htmlFor={`note-${to}`}>Note (optional)</label>
+                        <input id={`note-${to}`} name="note" />
+                      </div>
+                      <div className="form-actions">
+                        <button className="btn btn-quiet" type="submit">
+                          {to === "cancelled" ? "Cancel job" : "Mark failed"}
+                        </button>
+                      </div>
                     </form>
                   ))}
-                </div>
+                </>
               )}
             </section>
           </div>

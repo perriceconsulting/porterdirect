@@ -10,6 +10,7 @@ import {
   isLocationVisible,
   isTerminal,
   nextStatuses,
+  statusTone,
   type OrderStatus,
   type OrderType,
 } from "../src/order-state.js";
@@ -202,5 +203,32 @@ describe("vocabulary", () => {
     // A dispatcher says "on the way", not "en_route".
     expect(STATUS_LABELS.en_route).toBe("On the way");
     expect(STATUS_LABELS.pending).toBe("Unassigned");
+  });
+});
+
+describe("statusTone", () => {
+  it("calls a delivered job, and only a delivered job, a success", () => {
+    const good = ALL_STATUSES.filter((s) => statusTone(s) === "good");
+    expect(good).toEqual(["delivered"]);
+  });
+
+  it("does not colour a failed job as a success", () => {
+    // The defect this exists for: the order page branched on isTerminal, which is true
+    // of delivered, cancelled AND failed, so a job that never arrived rendered green.
+    expect(statusTone("failed")).not.toBe("good");
+    expect(statusTone("cancelled")).not.toBe("good");
+  });
+
+  it("warns on failure but not on cancellation", () => {
+    // Cancelled work was never attempted, so it is not a failure of the operator's work
+    // and must not read like one. Same distinction as the closure reason sets.
+    expect(statusTone("failed")).toBe("warn");
+    expect(statusTone("cancelled")).toBe("neutral");
+  });
+
+  it("treats every live status as neutral", () => {
+    for (const status of ALL_STATUSES.filter((s) => !isTerminal(s))) {
+      expect(statusTone(status)).toBe("neutral");
+    }
   });
 });

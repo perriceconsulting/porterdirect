@@ -24,7 +24,7 @@ import {
   users,
 } from "../packages/db/src/index.js";
 import { createOrder, transitionOrder } from "../apps/marketing/lib/orders.js";
-import type { OrderStatus, OrderType } from "../packages/orders/src/index.js";
+import type { ClosureReason, OrderStatus, OrderType } from "../packages/orders/src/index.js";
 
 function loadEnv(): Record<string, string> {
   const env: Record<string, string> = {};
@@ -61,6 +61,9 @@ interface Seed {
   readonly notes?: string;
   /** Statuses to walk through after creation, in order. */
   readonly advanceTo: readonly OrderStatus[];
+  /** Required when advanceTo ends in cancelled or failed — the service refuses without one. */
+  readonly closureReason?: ClosureReason;
+  readonly closureNote?: string;
   readonly scheduledFor?: Date;
 }
 
@@ -77,7 +80,7 @@ const SEEDS: readonly Seed[] = [
   },
   {
     type: "fixed_pickup",
-    first: "Devon", last: "Okafor", phone: "2125550123",
+    first: "Devon", last: "Okafor", phone: "2127363100",
     pickup: ["11 Wall St", "New York", "NY", "10005"],
     dropoff: ["30 Rockefeller Plaza", "New York", "NY", "10112"],
     price: 6200, notes: "Reception closes at 5pm",
@@ -94,7 +97,7 @@ const SEEDS: readonly Seed[] = [
   },
   {
     type: "shop_in_store",
-    first: "Ana", last: "Delgado", phone: "4155552671",
+    first: "Ana", last: "Delgado", phone: "4156217000",
     pickup: ["2001 Market St", "San Francisco", "CA", "94114"],
     dropoff: ["1 Ferry Building", "San Francisco", "CA", "94111"],
     price: 3400, notes: "Substitutions need approval before checkout",
@@ -117,12 +120,25 @@ const SEEDS: readonly Seed[] = [
     advanceTo: ["assigned", "en_route", "delivered"],
   },
   {
+    // A failed job, so the board shows one that can be re-dispatched.
     type: "fixed_pickup",
-    first: "Owen", last: "Barrett", phone: "2125550123",
+    first: "Luis", last: "Ferreira", phone: "4158636000",
+    pickup: ["1355 Market St", "San Francisco", "CA", "94103"],
+    dropoff: ["600 Montgomery St", "San Francisco", "CA", "94111"],
+    price: 4100,
+    advanceTo: ["assigned", "en_route", "failed"],
+    closureReason: "recipient_unavailable",
+    closureNote: "Buzzer not working, no answer after 10 minutes",
+  },
+  {
+    type: "fixed_pickup",
+    first: "Owen", last: "Barrett", phone: "2128780800",
     pickup: ["405 Lexington Ave", "New York", "NY", "10174"],
     dropoff: ["89 E 42nd St", "New York", "NY", "10017"],
-    price: 3100, notes: "Customer cancelled — recipient unavailable",
+    price: 3100,
     advanceTo: ["cancelled"],
+    closureReason: "customer_cancelled",
+    closureNote: "Called to say the recipient had already collected it",
   },
 ];
 
@@ -183,6 +199,12 @@ for (const seed of SEEDS) {
       orderId: order.id,
       to,
       actorUserId: owner.id,
+      // Closing states must carry a reason; the service refuses otherwise, which is the
+      // point — a seed that could skip it would be modelling something the product does
+      // not allow.
+      ...(to === "cancelled" || to === "failed"
+        ? { reason: seed.closureReason, note: seed.closureNote }
+        : {}),
     });
   }
 

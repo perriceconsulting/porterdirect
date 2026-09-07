@@ -574,6 +574,10 @@ h2 {
   font-family: var(--fs-mono);
   font-variant-numeric: tabular-nums;
 }
+/* The BASE tone is neutral on purpose. Green is a claim — "this went well" — and a
+   default that makes it silently was wrong on every bare `.pill` in the app: a failed
+   job and an "owner" role badge both wore the success colour because neither had asked
+   for a tone at all. Success now has to be named. */
 .pill {
   display: inline-flex;
   align-items: center;
@@ -584,6 +588,10 @@ h2 {
   text-transform: uppercase;
   padding: 0.15rem 0.45rem;
   border-radius: 2px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+.pill.good {
   background: var(--good-bg);
   color: var(--good);
 }
@@ -716,6 +724,10 @@ h2 {
   grid-template-columns: 1fr;
   gap: 1.25rem;
   margin-bottom: 1.25rem;
+  /* Each panel is as tall as its own content. Grid's default `stretch` made the moves
+     panel match the job panel, so a closed job showed two lines and a button floating
+     in a card of empty space. */
+  align-items: start;
 }
 .console-grid .panel {
   margin-bottom: 0;
@@ -842,10 +854,6 @@ th.num {
 }
 .ref-link:hover {
   text-decoration: underline;
-}
-.pill.neutral {
-  background: var(--surface-2);
-  color: var(--ink-2);
 }
 .moves {
   display: flex;
@@ -1047,4 +1055,15 @@ input[aria-invalid="true"] {
     padding-top: 0;
     margin-top: 1.6rem;
   }
+}
+
+/* Closing a job is a considered action, so its form is set apart from the one-click
+   forward moves rather than sitting among them. */
+.close-form {
+  margin-top: 1.2rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--rule-soft);
+}
+.close-form .form-actions {
+  margin-top: 0.9rem;
 }

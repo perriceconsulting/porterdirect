@@ -115,7 +115,7 @@ export default async function Welcome({
                 {row.status === null ? (
                         <span className="pill warn">Confirming</span>
                       ) : (
-                        <span className={isEntitled(row.status) ? "pill" : "pill warn"}>
+                        <span className={isEntitled(row.status) ? "pill good" : "pill warn"}>
                           {row.status}
                         </span>
                       )}

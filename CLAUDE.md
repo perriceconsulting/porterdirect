@@ -28,6 +28,8 @@ agencies) who run the physical work under their own brand + domain.
 | Env file reading | [scripts/lib/load-env.sh](scripts/lib/load-env.sh) | The only place a secrets file is read; parses as data, never sourced |
 | Authorization policy | [packages/auth/src/permissions.ts](packages/auth/src/permissions.ts) | The role→permission matrix; pure, exhaustive, no inheritance chain |
 | Order lifecycle | [packages/orders/src/order-state.ts](packages/orders/src/order-state.ts) | Explicit transition table; terminal is terminal, no skipping, location bound to the order |
+| Why a job ended | [packages/orders/src/closure.ts](packages/orders/src/closure.ts) | Closed reason sets; cancelled and failed are NOT the same list, and fault is three-valued |
+| How a status PRESENTS | [packages/orders/src/order-state.ts](packages/orders/src/order-state.ts) | `STATUS_LABELS` + `statusTone`; the board and the order page both derive, neither decides |
 | Phone handling | [packages/contact/src/phone.ts](packages/contact/src/phone.ts) | E.164 stored, formatted at point of use; libphonenumber metadata, never hand-rolled |
 | Postal addresses | [packages/contact/src/address.ts](packages/contact/src/address.ts) | Stored in parts; labels, requirements and line order vary by country |
 | Password policy | [packages/auth/src/password-policy.ts](packages/auth/src/password-policy.ts) | NIST SP 800-63B: length + breach checking, deliberately NO composition rules |
@@ -744,3 +746,49 @@ live-map reactivity.
     exactly what `formatAddressLines` exists to prevent. Having a formatter is not the
     same as using it; bypassing it for "just this one cell" is how the convention drifts.
   - Ratchets: tests = 310 + 6 PHAST + 27 e2e; client components = 2; lint = 0.
+
+- **2026-09-07 — Closing a dispatch: cancelled vs failed, and re-dispatch.**
+  - **Cancelled and failed carry DIFFERENT reason sets**
+    ([packages/orders/src/closure.ts](packages/orders/src/closure.ts)). They are not
+    synonyms: a cancelled job was never attempted, a failed one was. That distinction
+    decides who absorbs the cost, whether a re-attempt is reasonable, and whether the
+    number reflects on the operator at all — so one merged list would destroy the only
+    thing the field is for. Reasons are a closed set, not free text: "nobody home" typed
+    forty ways cannot be counted, and counting is the entire point.
+  - **Fault is three-valued** (`operator` / `customer` / `neither`), not a blame flag.
+    Recording weather as the operator's fault makes their own numbers worse than the work
+    was, which is how a metric stops being used.
+  - **Re-dispatch creates a NEW linked order, never a reopened one.** Terminal stays
+    terminal. Reopening would rewrite the first attempt's history and erase its failure
+    from the operator's numbers. `redispatched_from_order_id` links the two, and a job
+    can only be re-dispatched once.
+  - `transitionOrder` now REFUSES a closing transition with no reason, and refuses a
+    reason belonging to the other status ("customer_cancelled" is not a way to fail).
+    The seed script had to be updated to supply one — a seed that could skip it would be
+    modelling something the product does not allow.
+  - **A defect only a person looking at the page could catch.** The order page chose its
+    status colour with `isTerminal(status)` — true of delivered, cancelled AND failed —
+    so a job that never arrived rendered in the same success green as a delivered one.
+    323 unit tests passed. The dispatch board had independently decided the same question
+    and reached a different answer, which is the DOSI-S failure exactly: two places
+    deciding one thing and drifting. Tone is now derived once, from the domain
+    (`statusTone`), and the base `.pill` was retoned to NEUTRAL — green is a claim, and a
+    default that made it silently was also wrong on every bare role badge in the app.
+  - **S:** `statusTone` joins `STATUS_LABELS` as the single origin for how a status
+    presents. **I:** tone follows OUTCOME, not finishedness — cancelled reads neutral
+    because nobody attempted it, matching the reason sets rather than contradicting them.
+  - New PHAST/e2e pillar: [e2e/orders-closure.spec.ts](e2e/orders-closure.spec.ts) builds
+    its jobs through the board's own form and the real transition buttons rather than
+    inserting rows, so a fixture cannot assert against a state the product can't reach.
+    The colour assertion was verified non-vacuous by re-introducing the `isTerminal`
+    branch: it failed with `Received string: "pill good"` on a failed job.
+  - Also corrected: the seed file's header claimed every number was dialable and that no
+    555 numbers were present, while two fixtures were 555 numbers — one inside the
+    555-01xx block genuinely reserved for fiction. A comment that lies about the data
+    beside it is worse than no comment.
+  - Left alone (with reason): `formatUsdCents` still drops a whole-dollar ".00", so a job
+    board can show "$41" above "$48.50". Correct and documented for a catalogue price
+    ($199, not $199.00); a second transactional formatter would be an abstraction on the
+    second use, not the third. Worth revisiting if operators read these columns as a
+    ledger.
+  - Ratchets: tests = **327** + 6 PHAST + **33** e2e; client components = 2; lint = 0.

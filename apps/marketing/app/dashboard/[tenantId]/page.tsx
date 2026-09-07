@@ -83,7 +83,7 @@ export default async function Console({
               <p className="eyebrow">Operator console</p>
               <h1 className="console-title">{tenant.name}</h1>
             </div>
-            <span className={billingActive ? "pill" : "pill warn"}>
+            <span className={billingActive ? "pill good" : "pill warn"}>
               {subscription?.status ?? "no subscription"}
             </span>
           </div>

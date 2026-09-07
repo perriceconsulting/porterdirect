@@ -8,7 +8,14 @@
  */
 import { can } from "@porterdirect/auth";
 import { formatUsdCents } from "@porterdirect/billing";
-import { STATUS_LABELS, TYPE_LABELS, isTerminal, type OrderStatus, type OrderType } from "@porterdirect/orders";
+import {
+  STATUS_LABELS,
+  TYPE_LABELS,
+  isTerminal,
+  statusTone,
+  type OrderStatus,
+  type OrderType,
+} from "@porterdirect/orders";
 import { formatAddressLines, formatPhone, type CountryCode } from "@porterdirect/contact";
 import { SiteHeader } from "../../../_components/site-header";
 import { PhoneField } from "../../../_components/phone-field";
@@ -23,10 +30,10 @@ export const metadata = { title: "Dispatch — PorterDirect" };
 
 const CREATABLE_TYPES: OrderType[] = ["fixed_pickup", "scheduled_courier", "shop_in_store", "errand"];
 
+/** Tone comes from the domain, never from this file — see `statusTone`. */
 function statusClass(status: OrderStatus): string {
-  if (status === "delivered") return "pill";
-  if (status === "cancelled" || status === "failed") return "pill warn";
-  return "pill neutral";
+  const tone = statusTone(status);
+  return tone === "neutral" ? "pill" : `pill ${tone}`;
 }
 
 export default async function OrdersBoard({
