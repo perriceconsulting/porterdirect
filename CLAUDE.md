@@ -654,3 +654,20 @@ live-map reactivity.
     most common way such a field becomes unusable. Verified in a real browser.
   - Ratchets: tests = **289** + 6 PHAST + 27 e2e; client components = **2** (the input
     genuinely cannot format between keystrokes without JS); lint = 0.
+
+- **2026-09-07 — Phone field: capped by digits, and says when a number is unusable.**
+  - Reported as "it starts to format then fails". That was libphonenumber behaving
+    correctly — it reads a leading `1` as the US country code, then no plan matches the
+    remaining digits, so it stops formatting and appends. Internally right, and it reads
+    as broken.
+  - Capped by **digit count**, not string length: E.164 allows 15 digits, and past that
+    the formatter can only degrade. Refusing the extra digits keeps the field in a state
+    the formatter can actually render.
+  - Added live validity: `aria-invalid`, a coloured border, and a message in the hint
+    slot. **Colour does not carry the meaning** — the wording says what is wrong. Nothing
+    is said below 7 digits, because judging a half-typed number is nagging.
+  - The message names the country properly via `Intl.DisplayNames` ("United States", not
+    "US") and is phrased so the name works as a MODIFIER — "a valid United States
+    number". After a preposition it would need an article that is right for "the United
+    States" and wrong for "France".
+  - Ratchets: tests = 289 + 6 PHAST + 27 e2e; client components = 2; lint = 0.

@@ -3,16 +3,42 @@
 /**
  * Phone input that formats as you type.
  *
- * The second client component in the project, and like the first it is here because the
- * behaviour genuinely cannot exist without JavaScript: punctuation has to appear between
- * keystrokes.
+ * The behaviour genuinely cannot exist without JavaScript — punctuation has to appear
+ * between keystrokes — but it degrades rather than breaking. With JS disabled this is an
+ * ordinary `tel` input, whatever is typed still submits, and the SERVER normalises to
+ * E.164. The formatting here is a convenience, never what makes the value correct.
  *
- * It degrades rather than breaking. With JS disabled this is an ordinary `tel` input,
- * whatever is typed still submits, and the SERVER normalises it to E.164 — the formatting
- * here is a convenience, never the thing that makes the value correct.
+ * Two behaviours are deliberate and were both learned the hard way:
+ *
+ *   Deletions are NOT reformatted. Formatting a deletion re-inserts the punctuation the
+ *   user is removing, so backspace appears to do nothing.
+ *
+ *   Input is capped by DIGIT COUNT, not string length. Past the longest possible number
+ *   the formatter stops matching any plan and silently degrades to appending raw digits,
+ *   which reads as "it started formatting and then broke". Refusing the extra digits
+ *   keeps the field in a state the formatter can actually render.
  */
 import { useState } from "react";
-import { formatAsYouType, type CountryCode } from "@porterdirect/contact";
+import { formatAsYouType, isValidPhone, type CountryCode } from "@porterdirect/contact";
+
+/** E.164 allows at most 15 digits, country code included. */
+const MAX_DIGITS = 15;
+/** Below this there is nothing to judge yet, so saying "invalid" would just be nagging. */
+const MIN_DIGITS_BEFORE_JUDGING = 7;
+
+const digitsOf = (value: string): string => value.replace(/\D/g, "");
+
+/**
+ * "United States", not "US". The code is what we store; a person reading an error should
+ * see the country's name. Falls back to the code where the browser has no display name.
+ */
+function countryName(code: CountryCode): string {
+  try {
+    return new Intl.DisplayNames(undefined, { type: "region" }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
 
 export function PhoneField({
   name,
@@ -31,6 +57,12 @@ export function PhoneField({
 }) {
   const [value, setValue] = useState(defaultValue);
   const id = `phone-${name}`;
+  const hintId = `${id}-hint`;
+
+  const digits = digitsOf(value);
+  const looksComplete = digits.length >= MIN_DIGITS_BEFORE_JUDGING;
+  const valid = value !== "" && isValidPhone(value, country);
+  const showProblem = looksComplete && !valid;
 
   return (
     <div className="field">
@@ -42,24 +74,33 @@ export function PhoneField({
         inputMode="tel"
         autoComplete="tel"
         required={required}
-        // A cap, because nothing else stops forty digits being typed. The longest E.164
-        // number is 15 digits; 24 leaves generous room for punctuation and a country
-        // prefix while refusing obvious nonsense before it reaches the server.
-        maxLength={24}
+        aria-invalid={showProblem || undefined}
+        aria-describedby={hintId}
         value={value}
         onChange={(event) => {
           const next = event.target.value;
-          // Only format when ADDING characters. Formatting a deletion re-inserts the
-          // punctuation the user is trying to remove, so backspace appears to do
-          // nothing — the single most common way an as-you-type field becomes unusable.
+
+          // Deleting: take it verbatim, or backspace fights the formatter.
           if (next.length < value.length) {
             setValue(next);
             return;
           }
+
+          // Refuse digits past the longest number that can exist. Without this the
+          // formatter gives up and starts appending, which looks like a failure.
+          if (digitsOf(next).length > MAX_DIGITS) return;
+
           setValue(formatAsYouType(next, country));
         }}
       />
-      {hint ? <span className="hint">{hint}</span> : null}
+      <span className={showProblem ? "hint hint-problem" : "hint"} id={hintId}>
+        {showProblem
+          // The country name reads as a modifier ("a valid United States number") rather
+          // than after a preposition, which would need an article that is right for
+          // "the United States" and wrong for "France".
+          ? `That does not look like a valid ${countryName(country)} number. Check the digits, or start with + and a country code.`
+          : hint}
+      </span>
     </div>
   );
 }

@@ -1000,3 +1000,13 @@ th.num {
     margin-top: 1.6rem;
   }
 }
+
+/* An invalid entry, stated in the hint slot rather than as a separate banner: the
+   message belongs beside the field it is about. Colour alone does not carry it — the
+   wording says what is wrong, for anyone who cannot distinguish the hue. */
+.hint-problem {
+  color: var(--accent);
+}
+input[aria-invalid="true"] {
+  border-color: var(--accent);
+}
