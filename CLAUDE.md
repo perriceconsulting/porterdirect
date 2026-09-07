@@ -48,6 +48,14 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
 - **Webhook double-apply.** Stripe re-delivers events; without idempotency a retry applies
   twice. `processed_webhook_events` + `handleStripeEvent` make it exactly-once.
 - **Money as float.** All amounts are integer cents. Never introduce floating-point money.
+- **Stripping commas from a typed amount is a hundredfold bug.** `12,34` is decimal
+  notation across most of Europe; treating the comma as a thousands separator turns
+  $12.34 into $1,234 silently, on an invoice. `parseUsdToCents` accepts commas ONLY in
+  exact thousands positions and refuses anything ambiguous, so a person can correct it.
+- **Every export from a `"use server"` module must be async.** A synchronous helper
+  exported alongside actions makes the whole route 500 with "Server Actions must be
+  async functions" — which reads like a framework problem and is a stray export. Pure
+  helpers belong in a package, not beside the actions that use them.
 - **An invite link is a bearer credential.** Whoever holds it joins the tenant. Store
   the token HASHED (a database dump of raw tokens is a set of working keys), compare it
   in constant time (a plain compare leaks how many characters matched), bind it to the

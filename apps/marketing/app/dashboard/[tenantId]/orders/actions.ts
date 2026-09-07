@@ -11,6 +11,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { isRedirectError } from "@porterdirect/auth";
 import { IllegalTransitionError, type OrderStatus, type OrderType } from "@porterdirect/orders";
+import { parseUsdToCents } from "@porterdirect/billing";
 import { requireConsole } from "../../../../lib/console";
 import { OrderValidationError, createOrder, transitionOrder } from "../../../../lib/orders";
 
@@ -37,20 +38,6 @@ function field(data: FormData, key: string): string {
   return typeof v === "string" ? v.trim() : "";
 }
 
-/**
- * Parse a price entered in dollars into integer cents.
- *
- * Deliberately string-based. `Math.round(parseFloat("19.99") * 100)` is the classic way
- * money becomes 1998 — and `parseFloat` is banned repo-wide for exactly this reason.
- */
-export function dollarsToCents(input: string): number | null {
-  const trimmed = input.trim().replace(/^\$/, "").replace(/,/g, "");
-  if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return null;
-  const [whole, fraction = ""] = trimmed.split(".");
-  const cents = fraction.padEnd(2, "0");
-  return Number.parseInt(whole!, 10) * 100 + Number.parseInt(cents, 10);
-}
-
 export async function createOrderAction(data: FormData): Promise<void> {
   const tenantId = field(data, "tenantId");
   if (!tenantId) redirect("/dashboard");
@@ -61,7 +48,7 @@ export async function createOrderAction(data: FormData): Promise<void> {
   const type = field(data, "type") as OrderType;
   if (!ORDER_TYPES.includes(type)) redirect(`${base}?error=Choose a job type.`);
 
-  const priceCents = dollarsToCents(field(data, "price") || "0");
+  const priceCents = parseUsdToCents(field(data, "price") || "0");
   if (priceCents === null) {
     redirect(`${base}?error=${encodeURIComponent("Enter a price like 49.50.")}`);
   }
