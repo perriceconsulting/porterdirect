@@ -47,6 +47,13 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
 - **Webhook double-apply.** Stripe re-delivers events; without idempotency a retry applies
   twice. `processed_webhook_events` + `handleStripeEvent` make it exactly-once.
 - **Money as float.** All amounts are integer cents. Never introduce floating-point money.
+- **A cleanup pattern is a destructive query.** A sweep of `email LIKE '%.test'` was run
+  to remove test fixtures and it matched `workers@demo.test` — a REAL account, whose
+  deletion cascaded away its membership and orphaned a tenant with a live paid
+  subscription. Recoverable only because tenants and subscriptions do not cascade from
+  users. Scope every sweep by something the tests OWN (a per-run domain, a marker
+  column), never by a pattern that could plausibly match real data. Count the rows and
+  read them before deleting, not after.
 - **A checkout with tax calculation off collects no tax at all.** Stripe rejects
   `automatic_tax` until the account has a head office address and registrations, so it
   cannot be hardcoded on — but defaulting it off forever means charging real customers
@@ -471,3 +478,24 @@ live-map reactivity.
     uses a reserved host so the request fails at provisioning, AFTER the password check;
     seeing the host error is positive proof the password passed policy.
   - Ratchets: tests = **205** + 6 PHAST + 25 e2e; client components = 1; lint = 0.
+
+- **2026-09-07 — The operator console: something to land on after paying.**
+  - A tenant paid and landed on a status card. The PRD names a "back-office dashboard
+    (web, consumes fleet, on-shift, audited)" — but that is the OPERATING surface and
+    presumes orders, drivers and shifts. The surface between *paid* and *operating* is
+    not in the PRD at all, and that gap is what a new customer falls into.
+  - `/dashboard` picks a tenant (redirecting straight through when there is only one);
+    `/dashboard/[tenantId]` is the console: a real setup checklist driven by queries, the
+    subscription with seats and renewal date, the team roster, and Stripe's billing portal
+    for card, seats, invoices and cancellation — which we deliberately do not rebuild,
+    since it would mean owning PCI-adjacent flows and a second mirror of the subscription.
+  - **The tenant comes from the URL here, which looks like it contradicts the host rule.**
+    It does not: the request PROPOSES a tenant and `resolveConsoleMembership` LOOKS UP
+    whether this user belongs to it, scoped by both ids, so a forged or malformed id
+    returns null. Verified live: foreign tenant, forged UUID and malformed id all refuse
+    identically — refusing differently would confirm which tenants exist.
+  - Actions re-authorize rather than inheriting permission from the page that rendered the
+    button; a form post arrives on its own, carrying whatever the client chose to send.
+  - The unbuilt dispatch surface is labelled as unbuilt rather than mocked. An empty widget
+    called "Live map" implies a feature; saying it does not exist is more useful.
+  - Ratchets: tests = **208** + 6 PHAST + 25 e2e; client components = 1; lint = 0.

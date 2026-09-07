@@ -107,7 +107,12 @@ export default async function Welcome({
                   <li>
                     <span className="k">Subscription</span>
                     <span>
-                      {row.status === null ? (
+                      <p className="form-actions">
+                  <a className="btn btn-primary" href={`/dashboard/${row.id}`}>
+                    Open {row.name}
+                  </a>
+                </p>
+                {row.status === null ? (
                         <span className="pill warn">Confirming</span>
                       ) : (
                         <span className={isEntitled(row.status) ? "pill" : "pill warn"}>
@@ -123,6 +128,11 @@ export default async function Welcome({
                     </li>
                   ) : null}
                 </ul>
+                <p className="form-actions">
+                  <a className="btn btn-primary" href={`/dashboard/${row.id}`}>
+                    Open {row.name}
+                  </a>
+                </p>
                 {row.status === null ? (
                   <p className="sub" style={{ marginTop: "0.75rem", fontSize: "0.85rem" }}>
                     Payment confirmations arrive from Stripe a moment after checkout.

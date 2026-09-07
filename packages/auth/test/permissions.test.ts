@@ -129,3 +129,25 @@ describe("authorize()", () => {
     }
   });
 });
+
+/**
+ * The console takes a tenant id from the URL. These assert the rule that makes that
+ * safe: the request PROPOSES a tenant, the database DECIDES whether this user is in it.
+ */
+describe("console access via a request-supplied tenant id", () => {
+  it("authorizes only when the looked-up membership matches the requested tenant", () => {
+    const looked_up = member("ops", "tenant-a");
+    expect(() => authorize(looked_up, "tenant-a", "orders:read:all")).not.toThrow();
+  });
+
+  it("refuses when the lookup returned nothing for the requested tenant", () => {
+    // This is what a forged or guessed tenant id produces: null, not a membership.
+    expect(() => authorize(null, "tenant-b", "orders:read:all")).toThrow(AuthorizationError);
+  });
+
+  it("still refuses when a real membership is used against a different tenant", () => {
+    expect(() => authorize(member("owner", "tenant-a"), "tenant-b", "members:read")).toThrow(
+      /Cross-tenant request refused/,
+    );
+  });
+});

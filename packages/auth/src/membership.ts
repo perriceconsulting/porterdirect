@@ -66,3 +66,33 @@ export async function listMembershipsForUser(db: Db, userId: string): Promise<Me
     .from(tenantMembers)
     .where(eq(tenantMembers.userId, userId));
 }
+
+/**
+ * Resolve a membership for a tenant named by the REQUEST (a path segment), not the host.
+ *
+ * The rule elsewhere is "the tenant comes from the host, never the request", and this
+ * looks like an exception. It is not, and the distinction matters:
+ *
+ *   Unsafe  — take a tenant id from the request and TRUST it.
+ *   Safe    — take a tenant id from the request and go and LOOK UP whether this user
+ *             belongs to it. The database answers; the request only proposes.
+ *
+ * An operator console needs this: one person may own two brands, and a contractor may
+ * drive for two firms, so the console cannot be pinned to a single host. What makes it
+ * safe is that the query is scoped by BOTH ids, so a forged tenant id returns null
+ * rather than someone else's membership.
+ *
+ * Note this is deliberately the same query as `findMembership` — the point is that
+ * there is no second, looser path. Do not add one.
+ */
+export async function resolveConsoleMembership(
+  db: Db,
+  userId: string,
+  requestedTenantId: string,
+): Promise<Membership | null> {
+  // A malformed id must not reach the database as a cast error that leaks as a 500.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestedTenantId)) {
+    return null;
+  }
+  return findMembership(db, userId, requestedTenantId);
+}
