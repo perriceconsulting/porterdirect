@@ -12,14 +12,29 @@ import type Stripe from "stripe";
 import { toTenantSubscription } from "./subscription-state.js";
 import type { StripeSubscriptionSnapshot, TenantSubscription } from "./types.js";
 
-/** The minimal structural shape we read off a Stripe Subscription object. */
+/**
+ * The minimal structural shape we read off a Stripe Subscription object.
+ *
+ * `current_period_end` appears in TWO places depending on API version. Stripe moved it
+ * off the Subscription and onto each subscription ITEM; on 2026-08-26.dahlia the
+ * subscription-level field is absent. Both are optional here and the extractor prefers
+ * the item, so one codebase handles accounts pinned to either version.
+ */
 export interface RawStripeSubscriptionLike {
   id: string;
   customer: string | { id: string };
   status: string;
   cancel_at_period_end: boolean;
-  current_period_end: number | null;
-  items: { data: Array<{ quantity?: number | null; price: { id: string } }> };
+  /** Legacy location — absent on newer API versions. */
+  current_period_end?: number | null;
+  items: {
+    data: Array<{
+      quantity?: number | null;
+      price: { id: string };
+      /** Current location on newer API versions. */
+      current_period_end?: number | null;
+    }>;
+  };
 }
 
 /**
@@ -89,10 +104,13 @@ export function snapshotFromStripeSubscription(
 
   let planId: string | null = null;
   let seatCount = 0;
+  let periodEndUnix: number | null = null;
   for (const item of items) {
     try {
       planId = resolvePlanId(item.price.id);
       seatCount = item.quantity ?? 0;
+      // Prefer the ITEM's period; fall back to the legacy subscription-level field.
+      periodEndUnix = item.current_period_end ?? sub.current_period_end ?? null;
       break;
     } catch {
       // Not the plan Price (e.g. a metered add-on) — keep looking.
@@ -108,7 +126,7 @@ export function snapshotFromStripeSubscription(
     rawStatus: sub.status,
     planId,
     seatCount,
-    currentPeriodEndUnix: sub.current_period_end,
+    currentPeriodEndUnix: periodEndUnix,
     cancelAtPeriodEnd: sub.cancel_at_period_end,
   };
 }

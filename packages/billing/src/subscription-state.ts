@@ -42,14 +42,24 @@ export function toTenantSubscription(snapshot: StripeSubscriptionSnapshot): Tena
     throw new Error(`Invalid seatCount: ${snapshot.seatCount} (must be a non-negative integer)`);
   }
 
+  const periodEnd = snapshot.currentPeriodEndUnix;
+  if (periodEnd !== null && !Number.isFinite(periodEnd)) {
+    // Guards the class of bug where Stripe relocates a field between API versions:
+    // reading the wrong place yields undefined, and `new Date(undefined * 1000)` is an
+    // Invalid Date that only fails later, deep in the persistence layer.
+    throw new Error(
+      `Invalid currentPeriodEndUnix: ${String(periodEnd)} for subscription ` +
+        `${snapshot.stripeSubscriptionId} (expected unix seconds or null)`,
+    );
+  }
+
   const status = normalizeStatus(snapshot.rawStatus);
   return {
     stripeSubscriptionId: snapshot.stripeSubscriptionId,
     planId: snapshot.planId,
     status,
     seatCount: snapshot.seatCount,
-    currentPeriodEnd:
-      snapshot.currentPeriodEndUnix === null ? null : new Date(snapshot.currentPeriodEndUnix * 1000),
+    currentPeriodEnd: periodEnd === null ? null : new Date(periodEnd * 1000),
     cancelAtPeriodEnd: snapshot.cancelAtPeriodEnd,
     entitled: isEntitled(status),
   };

@@ -8,6 +8,7 @@ import {
   type SubscriptionSink,
   type RawStripeSubscriptionLike,
 } from "../src/webhook.js";
+import { toTenantSubscription } from "../src/subscription-state.js";
 import type { TenantSubscription } from "../src/types.js";
 
 /**
@@ -203,5 +204,81 @@ describe("handleStripeEvent — concurrent redelivery", () => {
 
     expect(second).toEqual({ status: "skipped_duplicate" });
     expect(store.released).toBe(0);
+  });
+});
+
+/**
+ * Regression: Stripe RELOCATED `current_period_end` from the Subscription onto each
+ * subscription item. On API version 2026-08-26.dahlia the subscription-level field is
+ * absent, so reading it yielded undefined and `new Date(undefined * 1000)` produced an
+ * Invalid Date that only blew up later in the persistence layer as "Invalid time
+ * value". Found in live traffic, not in tests — the fixtures here all hand-wrote the
+ * old shape. Both shapes are now covered.
+ */
+describe("snapshotFromStripeSubscription — current_period_end location", () => {
+  const base = {
+    id: "sub_period",
+    customer: "cus_period",
+    status: "active",
+    cancel_at_period_end: false,
+  };
+
+  it("reads the period from the ITEM (current Stripe API versions)", () => {
+    const snap = snapshotFromStripeSubscription(
+      {
+        ...base,
+        items: { data: [{ quantity: 7, price: { id: "price_dc" }, current_period_end: 1791367068 }] },
+      } as RawStripeSubscriptionLike,
+      resolvePlanId,
+    );
+    expect(snap.currentPeriodEndUnix).toBe(1791367068);
+  });
+
+  it("falls back to the SUBSCRIPTION level (legacy API versions)", () => {
+    const snap = snapshotFromStripeSubscription(
+      {
+        ...base,
+        current_period_end: 1700000000,
+        items: { data: [{ quantity: 7, price: { id: "price_dc" } }] },
+      } as RawStripeSubscriptionLike,
+      resolvePlanId,
+    );
+    expect(snap.currentPeriodEndUnix).toBe(1700000000);
+  });
+
+  it("prefers the item's period when both are present", () => {
+    const snap = snapshotFromStripeSubscription(
+      {
+        ...base,
+        current_period_end: 1700000000,
+        items: { data: [{ quantity: 7, price: { id: "price_dc" }, current_period_end: 1791367068 }] },
+      } as RawStripeSubscriptionLike,
+      resolvePlanId,
+    );
+    expect(snap.currentPeriodEndUnix).toBe(1791367068);
+  });
+
+  it("yields null, never undefined, when neither location carries a period", () => {
+    const snap = snapshotFromStripeSubscription(
+      { ...base, items: { data: [{ quantity: 7, price: { id: "price_dc" } }] } } as RawStripeSubscriptionLike,
+      resolvePlanId,
+    );
+    expect(snap.currentPeriodEndUnix).toBeNull();
+    // and must convert to a null date rather than an Invalid Date
+    expect(toTenantSubscription(snap).currentPeriodEnd).toBeNull();
+  });
+
+  it("names a non-finite period instead of producing an Invalid Date", () => {
+    expect(() =>
+      toTenantSubscription({
+        stripeSubscriptionId: "sub_bad",
+        stripeCustomerId: "cus_bad",
+        rawStatus: "active",
+        planId: "direct_courier",
+        seatCount: 1,
+        currentPeriodEndUnix: Number.NaN,
+        cancelAtPeriodEnd: false,
+      }),
+    ).toThrow(/Invalid currentPeriodEndUnix/);
   });
 });

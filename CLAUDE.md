@@ -44,6 +44,14 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
 - **Webhook double-apply.** Stripe re-delivers events; without idempotency a retry applies
   twice. `processed_webhook_events` + `handleStripeEvent` make it exactly-once.
 - **Money as float.** All amounts are integer cents. Never introduce floating-point money.
+- **Stripe relocates fields between API versions.** `current_period_end` moved off the
+  Subscription onto each subscription ITEM; on 2026-08-26.dahlia the subscription-level
+  field is simply absent. Reading the old place yields `undefined`, and
+  `new Date(undefined * 1000)` is an Invalid Date that survives until the persistence
+  layer and surfaces as "Invalid time value" — far from the cause. Extractors read the
+  item first and fall back to the subscription, and `toTenantSubscription` rejects a
+  non-finite timestamp by name. Hand-written fixtures will NOT catch this class of bug:
+  it was found by a real subscription, not by 53 passing tests.
 - **Stripe `tax_behavior` is immutable, and Prices cannot be deleted.** Once a Price is
   created `inclusive` or `exclusive`, that choice is permanent; changing it means
   creating new Prices and re-pointing every `STRIPE_PRICE_*` env var. Catalog amounts
@@ -182,3 +190,23 @@ live-map reactivity.
     is deliberately unset: the catalog carries no amount for it (pass-through metered),
     the product does not send SMS yet, and inventing a rate would be inventing pricing.
     Verified that leaving it unset breaks nothing.
+
+- **2026-09-07 — Stripe Prices created; full path proven end to end.**
+  - Created from the catalog via `npm run stripe:prices -- --apply`: 4 Products (all
+    `tax_code=txcd_10103001`) and 5 Prices (all `tax_behavior=exclusive`), graduated
+    tiers matching `plans.ts` exactly. Read back from Stripe and verified rather than
+    trusting the create output. `STRIPE_PRICE_SMS_METERED` remains unset by design.
+  - **Found and fixed a real bug that only live traffic could surface:** the first real
+    subscription 500'd with "Invalid time value". Stripe had MOVED `current_period_end`
+    from the Subscription onto the subscription item, so we read `undefined`. Every
+    existing fixture hand-wrote the old shape, so 53 green tests said nothing. Extractor
+    now prefers the item and falls back to the subscription; 5 regression tests cover
+    both shapes, the neither-present case, and the non-finite guard.
+  - **Checklist step 6 satisfied for real:** a live subscription on the Direct Courier
+    Price → signature verified → resolved to `direct_courier` via the catalog price map
+    → tenant-scoped row written to Neon with the correct `tenant_id` and `seat_count=7`.
+  - **Reconciled our money math against Stripe:** `computeMonthlyTotalCents` and the
+    Stripe invoice subtotal both give 24900 for 7 seats. The graduated Price and our
+    arithmetic are one model, confirmed against the API rather than asserted.
+  - Test data (3 customers, 3 tenants, subscriptions) deleted after verification.
+  - Ratchets: tests = **64** (was 59); client components = 0; lint still not configured.
