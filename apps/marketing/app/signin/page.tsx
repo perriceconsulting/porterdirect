@@ -4,6 +4,7 @@
  */
 import { signInAction } from "../actions";
 import type { FormErrorCode } from "../actions";
+import { SiteHeader } from "../_components/site-header";
 
 export const metadata = { title: "Sign in — PorterDirect" };
 
@@ -15,6 +16,7 @@ export const metadata = { title: "Sign in — PorterDirect" };
 const MESSAGES: Partial<Record<FormErrorCode, string>> = {
   "missing-fields": "Enter your email address and password.",
   "bad-credentials": "That email and password do not match an account.",
+  "rate-limited": "Too many attempts. Wait a moment and try again.",
   unknown: "Something went wrong. Please try again.",
 };
 
@@ -28,18 +30,11 @@ export default async function SignIn({
 
   return (
     <>
-      <header className="site-header">
-        <div className="shell">
-          <a className="wordmark" href="/">
-            Porter<span>Direct</span>
-          </a>
-          <nav className="header-nav" aria-label="Main">
-            <a className="btn btn-quiet" href="/#pricing">
-              Pricing
-            </a>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader>
+        <a className="btn btn-quiet" href="/#pricing">
+          Pricing
+        </a>
+      </SiteHeader>
 
       <main className="auth-wrap">
         <div className="auth-card">

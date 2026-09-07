@@ -11,6 +11,7 @@
  * shipping work the reader never asked for.
  */
 import { ADD_ONS, PLANS, formatUsdCents, type Plan } from "@porterdirect/billing";
+import { SiteHeader } from "./_components/site-header";
 
 /** The tier we lead with. Featuring one is a design decision, so it is named here. */
 const FEATURED_PLAN_ID = "fleet_freight";
@@ -81,21 +82,14 @@ function TierCard({ plan }: { plan: Plan }) {
 export default function Home() {
   return (
     <>
-      <header className="site-header">
-        <div className="shell">
-          <a className="wordmark" href="/">
-            Porter<span>Direct</span>
-          </a>
-          <nav className="header-nav" aria-label="Main">
-            <a className="btn btn-quiet" href="#pricing">
-              Pricing
-            </a>
-            <a className="btn btn-primary" href="/signin">
-              Sign in
-            </a>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader sticky>
+        <a className="btn btn-quiet" href="#pricing">
+          Pricing
+        </a>
+        <a className="btn btn-primary" href="/signin">
+          Sign in
+        </a>
+      </SiteHeader>
 
       <main>
         <section className="hero">

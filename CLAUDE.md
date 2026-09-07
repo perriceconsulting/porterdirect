@@ -382,3 +382,27 @@ live-map reactivity.
     arithmetic showed even `2fr` left it ~1rem short, and guessing at widths is how
     clipping returns.
   - Ratchets: tests = **151** (was 133) + 6 PHAST; client components = **0**; lint = 0.
+
+- **2026-09-07 — Browser e2e, and the bug that proved it was needed.**
+  - A wrong password rendered an unhandled runtime error page while **169 tests passed**.
+    Cause: `err instanceof APIError` returns false inside a Next server action, because
+    the bundler gives the same class two identities. Auth errors are now classified by
+    SHAPE (`classifyAuthError`), which survives bundling, duplicate installs and version
+    skew. `isRedirectError` is checked first in every catch — `redirect()` signals by
+    throwing, and swallowing it hangs the request.
+  - **Nothing below the browser exercised the submit path**, so nothing could see it. New
+    `e2e` Playwright project (real Chromium) covering: wrong-password message, email
+    retained, identical copy for unknown-account vs wrong-password, reserved-host refusal,
+    plan select width, tier prices, no horizontal scroll at 375px, and every `.btn` being
+    a true 44px target. Kept separate from `phast` because they answer different questions
+    — phast asks whether isolation holds under concurrency, e2e asks whether it works at all.
+  - **Three wrong detectors before a right one**, worth recording: `getByRole("alert")`
+    also matched Next's route announcer; `nextjs-portal` is present on every healthy page;
+    `[data-nextjs-dialog]` did not appear even on a deliberately thrown error. The
+    version-proof signal is the **HTTP status** — a server component or action that throws
+    returns 5xx regardless of what the overlay is called this release. Guessing at a
+    framework's private DOM is how a test quietly stops testing.
+  - DRY: the site header had been copy-pasted into four pages. Extracted; stickiness is
+    now opt-in, because Next skips (and warns about) auto-scroll when the element it would
+    focus is sticky — worth it on the long marketing page, pure noise on a short form.
+  - Ratchets: tests = **169** + 6 PHAST + **11 e2e**; client components = 0; lint = 0.

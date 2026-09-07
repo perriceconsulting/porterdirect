@@ -16,6 +16,7 @@ import { isEntitled, type SubscriptionStatus } from "@porterdirect/billing";
 import { listMembershipsForUser } from "@porterdirect/auth";
 import { getAuth } from "../../lib/auth";
 import { signOutAction } from "../actions";
+import { SiteHeader } from "../_components/site-header";
 
 export const metadata = { title: "Your account — PorterDirect" };
 export const dynamic = "force-dynamic";
@@ -66,20 +67,13 @@ export default async function Welcome({
 
   return (
     <>
-      <header className="site-header">
-        <div className="shell">
-          <a className="wordmark" href="/">
-            Porter<span>Direct</span>
-          </a>
-          <nav className="header-nav" aria-label="Main">
-            <form action={signOutAction}>
-              <button className="btn btn-quiet" type="submit">
-                Sign out
-              </button>
-            </form>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader>
+        <form action={signOutAction}>
+          <button className="btn btn-quiet" type="submit">
+            Sign out
+          </button>
+        </form>
+      </SiteHeader>
 
       <main className="auth-wrap">
         <div className="auth-card">

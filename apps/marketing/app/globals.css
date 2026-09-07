@@ -88,6 +88,11 @@ body {
 .site-header {
   background: var(--surface);
   border-bottom: 1px solid var(--rule);
+}
+/* Opt-in. A sticky header is the element Next would auto-scroll to on navigation, and
+   it skips (and warns) when that element is sticky — worth it on the long marketing
+   page, pure noise on a short form. */
+.site-header--sticky {
   position: sticky;
   top: 0;
   z-index: 30;

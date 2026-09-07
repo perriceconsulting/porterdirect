@@ -14,7 +14,7 @@
  */
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { APIError } from "better-auth/api";
+import { classifyAuthError, isRedirectError, type AuthFailure } from "@porterdirect/auth";
 import { getAuth } from "../lib/auth";
 import { createCheckoutSession, provisionTenant } from "../lib/provisioning";
 
@@ -27,6 +27,7 @@ export type FormErrorCode =
   | "host-taken"
   | "invalid-name"
   | "unknown-plan"
+  | "rate-limited"
   | "checkout-failed"
   | "unknown";
 
@@ -34,6 +35,22 @@ function back(path: string, code: FormErrorCode, keep?: Record<string, string>):
   const params = new URLSearchParams({ error: code, ...keep });
   redirect(`${path}?${params.toString()}`);
 }
+
+/**
+ * Auth failures classified by SHAPE, never by `instanceof`.
+ *
+ * A bundler can hand the same error class to two modules as two different identities.
+ * That is precisely what happened here: `err instanceof APIError` is true in plain Node
+ * but false inside a Next server action, so a wrong password fell through to a rethrow
+ * and rendered an unhandled runtime error page instead of a form message.
+ */
+const FAILURE_TO_CODE: Record<AuthFailure, FormErrorCode> = {
+  "bad-credentials": "bad-credentials",
+  "email-taken": "email-taken",
+  "weak-password": "weak-password",
+  "rate-limited": "rate-limited",
+  unknown: "unknown",
+};
 
 function str(data: FormData, key: string): string {
   const v = data.get(key);
@@ -51,10 +68,15 @@ export async function signInAction(data: FormData): Promise<void> {
       headers: await headers(),
     });
   } catch (err) {
-    // Deliberately one code for both "no such user" and "wrong password". Telling them
-    // apart hands an attacker a free account-enumeration oracle.
-    if (err instanceof APIError) back("/signin", "bad-credentials", { email });
-    throw err;
+    // A redirect signals navigation by throwing; swallowing it would hang the request.
+    if (isRedirectError(err)) throw err;
+    // One code for both "no such user" and "wrong password" — telling them apart hands
+    // an attacker a free account-enumeration oracle.
+    const failure = classifyAuthError(err);
+    if (failure === "unknown") {
+      console.error("[signin] unexpected failure:", err instanceof Error ? err.message : err);
+    }
+    back("/signin", FAILURE_TO_CODE[failure] ?? "bad-credentials", { email });
   }
 
   redirect("/welcome");
@@ -97,12 +119,12 @@ export async function signUpAction(data: FormData): Promise<void> {
     });
     userId = result.user.id;
   } catch (err) {
-    if (err instanceof APIError) {
-      const message = String(err.message ?? "").toLowerCase();
-      if (message.includes("password")) back("/signup", "weak-password", keep);
-      back("/signup", "email-taken", keep);
+    if (isRedirectError(err)) throw err;
+    const failure = classifyAuthError(err);
+    if (failure === "unknown") {
+      console.error("[signup] unexpected failure:", err instanceof Error ? err.message : err);
     }
-    throw err;
+    back("/signup", FAILURE_TO_CODE[failure] ?? "unknown", keep);
   }
 
   const provisioned = await provisionTenant({
@@ -132,6 +154,7 @@ export async function signUpAction(data: FormData): Promise<void> {
       origin,
     });
   } catch (err) {
+    if (isRedirectError(err)) throw err;
     // The tenant and the account both exist at this point, so this is recoverable: the
     // owner can retry checkout rather than being told to sign up again.
     console.error("[signup] checkout failed:", err instanceof Error ? err.message : err);

@@ -22,8 +22,10 @@
     "lint:fix": "eslint . --fix",
     "verify:conventions": "bash scripts/verify-conventions.sh",
     "verify": "npm run typecheck && npm run lint && npm run verify:conventions && npm test",
-    "phast": "playwright test",
-    "phast:serial": "npm run phast -- --workers=1"
+    "phast": "playwright test --project=phast",
+    "phast:serial": "npm run phast -- --workers=1",
+    "e2e": "playwright test --project=e2e",
+    "e2e:headed": "npm run e2e -- --headed --workers=1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

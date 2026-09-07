@@ -7,6 +7,7 @@
 import { PLANS, formatUsdCents } from "@porterdirect/billing";
 import { signUpAction } from "../actions";
 import type { FormErrorCode } from "../actions";
+import { SiteHeader } from "../_components/site-header";
 
 export const metadata = { title: "Start a subscription — PorterDirect" };
 
@@ -19,6 +20,7 @@ const MESSAGES: Partial<Record<FormErrorCode, string>> = {
   "host-taken": "That domain is already connected to another account.",
   "invalid-name": "Enter your company name.",
   "unknown-plan": "Choose a plan to continue.",
+  "rate-limited": "Too many attempts. Wait a moment and try again.",
   unknown: "Something went wrong. Please try again.",
 };
 
@@ -33,18 +35,11 @@ export default async function SignUp({
 
   return (
     <>
-      <header className="site-header">
-        <div className="shell">
-          <a className="wordmark" href="/">
-            Porter<span>Direct</span>
-          </a>
-          <nav className="header-nav" aria-label="Main">
-            <a className="btn btn-quiet" href="/signin">
-              Sign in
-            </a>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader>
+        <a className="btn btn-quiet" href="/signin">
+          Sign in
+        </a>
+      </SiteHeader>
 
       <main className="auth-wrap">
         <div className="auth-card">
