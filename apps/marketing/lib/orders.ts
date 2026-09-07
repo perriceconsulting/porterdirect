@@ -15,7 +15,6 @@ import {
 } from "@porterdirect/orders";
 import {
   addressLabels,
-  formatAddressInline,
   missingAddressParts,
   parsePhone,
   type Address,
@@ -332,9 +331,4 @@ export function dropoffAddressOf(order: Order): Address {
     postalCode: order.dropoffPostalCode,
     country: order.dropoffCountry,
   };
-}
-
-/** One-line drop-off, for a table cell. */
-export function dropoffSummary(order: Order): string {
-  return formatAddressInline(dropoffAddressOf(order));
 }

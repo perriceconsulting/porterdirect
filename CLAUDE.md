@@ -723,3 +723,24 @@ live-map reactivity.
     operator a form change rather than a migration, and the widget is forty lines to
     write again when an operator needs it.
   - Ratchets unchanged: tests = 310 + 6 PHAST + 27 e2e; client components = 2; lint = 0.
+
+- **2026-09-07 — Seed script, and what a populated board revealed.**
+  - `npm run seed:demo -- <owner email>` fills a tenant's board with seven jobs spanning
+    every lifecycle state. It refuses to run with `NODE_ENV=production`, because a seed
+    script that quietly runs against production is how demo data reaches a customer.
+  - The data is **real-shaped on purpose**: dialable numbers, genuine street addresses,
+    courier-sized prices. A board of "Test Customer / 123 Test St / $0" tells you nothing
+    about whether the layout survives real content — and it would not have surfaced
+    either bug below.
+  - Jobs are walked through the real STATE MACHINE rather than written straight to a
+    status, so the seeded board carries a genuine chain-of-custody trail and an illegal
+    path in the seed file fails loudly instead of producing a row nothing can move.
+  - **Populating it exposed a missing column.** There was no "Deliver to" — the
+    destination only appeared when a job happened to have no phone number. Where a job is
+    going is the first thing a dispatcher scans for; on an empty board that omission is
+    invisible.
+  - **And then I reintroduced a bug I had already fixed.** Hand-joining the address parts
+    with `", "` rendered "Washington, DC, 20500" — the extra comma before the ZIP is
+    exactly what `formatAddressLines` exists to prevent. Having a formatter is not the
+    same as using it; bypassing it for "just this one cell" is how the convention drifts.
+  - Ratchets: tests = 310 + 6 PHAST + 27 e2e; client components = 2; lint = 0.

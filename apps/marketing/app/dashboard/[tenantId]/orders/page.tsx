@@ -9,14 +9,14 @@
 import { can } from "@porterdirect/auth";
 import { formatUsdCents } from "@porterdirect/billing";
 import { STATUS_LABELS, TYPE_LABELS, isTerminal, type OrderStatus, type OrderType } from "@porterdirect/orders";
-import { formatPhone, type CountryCode } from "@porterdirect/contact";
+import { formatAddressLines, formatPhone, type CountryCode } from "@porterdirect/contact";
 import { SiteHeader } from "../../../_components/site-header";
 import { PhoneField } from "../../../_components/phone-field";
 import { AddressFields } from "../../../_components/address-fields";
 import { signOutAction } from "../../../actions";
 import { createOrderAction } from "./actions";
 import { requireConsole } from "../../../../lib/console";
-import { dropoffSummary, listOrders } from "../../../../lib/orders";
+import { dropoffAddressOf, listOrders } from "../../../../lib/orders";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Dispatch — PorterDirect" };
@@ -96,6 +96,10 @@ export default async function OrdersBoard({
                     <tr>
                       <th scope="col">Reference</th>
                       <th scope="col">Customer</th>
+                      {/* Where it is going is the first thing a dispatcher scans for,
+                          and it had no column at all — the address only appeared when a
+                          job happened to have no phone number. */}
+                      <th scope="col">Deliver to</th>
                       <th scope="col">Type</th>
                       <th scope="col">Status</th>
                       <th scope="col" className="num">Price</th>
@@ -111,12 +115,26 @@ export default async function OrdersBoard({
                         </td>
                         <td>
                           {o.customerFirstName} {o.customerLastName}
-                          <br />
-                          <span className="hint">
-                            {o.customerPhone
-                              ? formatPhone(o.customerPhone, tenant.defaultCountry as CountryCode)
-                              : dropoffSummary(o)}
-                          </span>
+                          {o.customerPhone ? (
+                            <>
+                              <br />
+                              <span className="hint">
+                                {formatPhone(o.customerPhone, tenant.defaultCountry as CountryCode)}
+                              </span>
+                            </>
+                          ) : null}
+                        </td>
+                        <td>
+                          {/* Through the formatter, not hand-joined. Joining the parts
+                              with ", " here produced "Washington, DC, 20500" — the extra
+                              comma before the ZIP is precisely what formatAddressLines
+                              exists to get right, and bypassing it reintroduced the bug. */}
+                          {formatAddressLines(dropoffAddressOf(o)).map((line, i) => (
+                            <span key={line} className={i === 0 ? undefined : "hint"}>
+                              {line}
+                              <br />
+                            </span>
+                          ))}
                         </td>
                         <td>{TYPE_LABELS[o.type]}</td>
                         <td>
@@ -142,6 +160,7 @@ export default async function OrdersBoard({
                     <tr>
                       <th scope="col">Reference</th>
                       <th scope="col">Customer</th>
+                      <th scope="col">Deliver to</th>
                       <th scope="col">Outcome</th>
                       <th scope="col" className="num">Price</th>
                     </tr>
@@ -156,6 +175,9 @@ export default async function OrdersBoard({
                         </td>
                         <td>
                           {o.customerFirstName} {o.customerLastName}
+                        </td>
+                        <td className="hint">
+                          {[o.dropoffCity, o.dropoffRegion].filter(Boolean).join(", ")}
                         </td>
                         <td>
                           <span className={statusClass(o.status)}>
