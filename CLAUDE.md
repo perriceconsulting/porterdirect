@@ -272,3 +272,29 @@ live-map reactivity.
   - Left alone (with reason): the Better Auth runtime instance and its route handler are
     not wired yet. The policy and the schema it reads are the parts worth getting right
     first, and they are testable without a server.
+
+- **2026-09-07 — Auth runtime wired; session and host both resolve to a tenant.**
+  - `createAuth` takes config as ARGUMENTS. The lint rule banning `process.env` inside
+    `packages/**/src` forced this shape and it is the right one: a library that reads the
+    environment cannot be tested without one, and it hides which surface owns a secret.
+    It also refuses a `BETTER_AUTH_SECRET` under 32 chars — a short secret still signs
+    successfully, so that would otherwise be a silent weakness rather than a failure.
+  - **The tenant is resolved from the HOST, never from the request.** A tenant id in a
+    query string or body is attacker-controlled; trusting it turns every endpoint into a
+    cross-tenant read. `getRequestContext()` classifies the host, looks the tenant up, and
+    only then resolves this user's membership in THAT tenant.
+  - `findMembership` scopes by tenant AND user in one predicate. Looking up by user and
+    filtering the tenant in application code is the shape that leaks: a forgotten filter
+    returns a membership for the wrong tenant, and every downstream check then refuses or
+    permits honestly against the wrong scope — indistinguishable from working.
+  - Verified against the live database, not asserted: a user belonging to tenant A gets
+    `null` for tenant B; a dispatcher authorizes for `orders:assign` and is refused
+    `billing:manage`; an unclaimed host resolves to nothing rather than a default tenant.
+  - Exercised the real endpoints: sign-up returns an HttpOnly SameSite=Lax cookie, the
+    session resolves, and the user, session and account rows land in OUR Postgres with the
+    password hashed — confirming the Drizzle adapter binds to our schema rather than
+    keeping identity in a vendor.
+  - Ratchets: tests = **121** (was 112); lint errors = 0; client components = 0.
+  - Left alone (with reason): no sign-in UI yet — the endpoints exist and are exercised by
+    HTTP, and a form is presentation over a contract that already works. Tenant-isolation
+    PHAST spec is the next item and is now genuinely buildable.

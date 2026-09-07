@@ -2,7 +2,7 @@
   "name": "@porterdirect/marketing",
   "version": "0.0.0",
   "private": true,
-  "description": "porterdirect.com \u2014 licensee-facing surface: pricing, signup, subscription billing.",
+  "description": "porterdirect.com — licensee-facing surface: pricing, signup, subscription billing.",
   "scripts": {
     "dev": "node --env-file-if-exists=../../.env.local ../../node_modules/next/dist/bin/next dev -p 3000",
     "build": "node --env-file-if-exists=../../.env.local ../../node_modules/next/dist/bin/next build",
@@ -14,7 +14,8 @@
     "next": "^15.1.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "stripe": "^17.4.0"
+    "stripe": "^17.4.0",
+    "@porterdirect/auth": "*"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",
