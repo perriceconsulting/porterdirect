@@ -10,6 +10,7 @@ import {
   checkPassword,
   describeVerdict,
   isBreachedPassword,
+  policyByName,
   type PasswordContext,
 } from "@porterdirect/auth";
 
@@ -38,7 +39,11 @@ export async function validatePassword(
   password: string,
   context: PasswordContext = {},
 ): Promise<string | null> {
-  const verdict = checkPassword(password, context);
+  // "nist" (default) or "pci". Composition requirements are a COMPLIANCE decision,
+  // not a security one, so they live in configuration where an auditor's checklist
+  // can be satisfied without a code change.
+  const policy = policyByName(process.env.PASSWORD_POLICY);
+  const verdict = checkPassword(password, context, policy);
   if (!verdict.ok) return describeVerdict(verdict);
 
   if (process.env.PASSWORD_BREACH_CHECK === "false") return null;

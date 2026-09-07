@@ -448,3 +448,26 @@ live-map reactivity.
     not only shape changes.
   - Ratchets: tests = **189** + 6 PHAST + **25 e2e**; client components = **1** (was 0,
     with reason); lint = 0.
+
+- **2026-09-07 — Password complexity: separated from password security.**
+  - Pushed on "what about complexity?", and the honest answer was that I had conflated two
+    questions. **What is SECURE** is NIST SP 800-63B: length and breach checking, no
+    composition rules. **What is REQUIRED** is a different matter — PCI DSS 4.0 §8.3.6
+    mandates 12+ characters AND both numeric and alphabetic, and an auditor reading that
+    checklist is not persuaded by a citation. Composition is now **configurable**
+    (`PASSWORD_POLICY=nist|pci`), defaulting to NIST. Entering PCI scope becomes a config
+    change, not a rewrite. The policy is data, not an opinion baked into code.
+  - **A real hole, found by probing my own work:** `aaaaaaaaaaaa`, `abcdefghijkl` and
+    `qwertyuiopas` all passed. NIST names repetitive and sequential strings explicitly, so
+    this was a gap in the implementation, not a philosophy difference. Now rejected by
+    distinct-character count, run length, ascending/descending runs and keyboard rows —
+    with the threshold at five, because a shorter one fails real passphrases.
+  - Two existing tests then failed, correctly: they used `"a".repeat(12)` and the literal
+    alphabet as fixtures for length and composition. **The tests were asserting that
+    terrible passwords are acceptable.** Fixtures replaced. A boundary test needs an input
+    that is only interesting for the property under test.
+  - e2e was creating a real tenant AND a real Stripe customer on every run of the
+    "accepts a passphrase" test — four of each had leaked before it was noticed. It now
+    uses a reserved host so the request fails at provisioning, AFTER the password check;
+    seeing the host error is positive proof the password passed policy.
+  - Ratchets: tests = **205** + 6 PHAST + 25 e2e; client components = 1; lint = 0.

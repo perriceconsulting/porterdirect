@@ -373,11 +373,21 @@ test.describe("password policy", () => {
 
   test("accepts a plain lowercase passphrase with no digits or symbols", async ({ page }) => {
     // The absence of composition rules is deliberate; this proves it holds.
-    await attemptSignUp(page, "meadow lantern cobble drift");
-    // Assert on the URL, not on the absence of an error element: when the password is
-    // accepted there is no `p.error` at all, and `not.toContainText` fails on a missing
-    // element rather than passing. The URL exists either way.
+    //
+    // A RESERVED host is used so the request fails at provisioning, AFTER the password
+    // check. Letting it succeed would create a real tenant and a real Stripe customer on
+    // every run — this suite had already leaked four of each before that was noticed.
+    // Seeing the host error is positive proof the password got past the policy.
+    await page.goto("/signup");
+    await page.locator('input[name="firstName"]').fill("Policy");
+    await page.locator('input[name="lastName"]').fill("Tester");
+    await page.getByLabel("Work email").fill(uniqueEmail("policy"));
+    await page.locator('input[name="password"]').fill("meadow lantern cobble drift");
+    await page.getByLabel("Company name").fill("Policy Test Ltd");
+    await page.getByLabel("Your dispatch domain").fill("app.porterdirect.com");
+    await page.getByRole("button", { name: "Continue to payment" }).click();
+
+    await expect(page.locator("p.error")).toContainText("cannot be used");
     await expect(page).not.toHaveURL(/error=password-policy/);
-    await expect(page).not.toHaveURL(/error=weak-password/);
   });
 });

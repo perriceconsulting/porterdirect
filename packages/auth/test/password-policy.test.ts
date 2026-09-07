@@ -2,9 +2,12 @@ import { describe, it, expect } from "vitest";
 import {
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
+  NIST_POLICY,
+  PCI_DSS_POLICY,
   checkPassword,
   describeVerdict,
   isBreachedPassword,
+  policyByName,
 } from "../src/password-policy.js";
 
 describe("length rules", () => {
@@ -13,8 +16,13 @@ describe("length rules", () => {
     expect(checkPassword("a".repeat(MIN_PASSWORD_LENGTH - 1)).reasons).toContain("too-short");
   });
 
-  it("accepts exactly the minimum", () => {
-    expect(checkPassword("a".repeat(MIN_PASSWORD_LENGTH)).ok).toBe(true);
+  it("accepts exactly the minimum length", () => {
+    // Not "a".repeat(12) — that is now correctly refused as repetitive, and using it
+    // here would have asserted that a terrible password is acceptable. A boundary test
+    // needs a password that is ONLY interesting for its length.
+    const twelve = "moth quilt v";
+    expect([...twelve].length).toBe(MIN_PASSWORD_LENGTH);
+    expect(checkPassword(twelve).ok).toBe(true);
   });
 
   it("allows a long passphrase — length is the point", () => {
@@ -40,7 +48,8 @@ describe("length rules", () => {
 
 describe("no composition rules — deliberately", () => {
   it.each([
-    ["all lowercase letters", "abcdefghijklmnop"],
+    // Not "abcdefghijklmnop" — that is the alphabet, now refused as sequential.
+    ["all lowercase letters", "moth quilt vantage"],
     ["a spaced passphrase", "several plain english words here"],
     ["no digits or symbols", "thequickbrownfoxjumps"],
   ])("accepts %s", (_label, password) => {
@@ -132,5 +141,92 @@ describe("describeVerdict", () => {
 
   it("phrases the first problem for a person", () => {
     expect(describeVerdict(checkPassword("short"))).toContain("at least 12");
+  });
+});
+
+describe("low-entropy rejections (NIST names these explicitly)", () => {
+  it.each([
+    ["a single repeated character", "aaaaaaaaaaaa"],
+    ["two alternating characters", "abababababab"],
+    ["a long run of one character", "meadowaaaaalantern"],
+  ])("rejects %s as repetitive", (_label, password) => {
+    expect(checkPassword(password).reasons).toContain("repetitive");
+  });
+
+  it.each([
+    ["the alphabet", "abcdefghijkl"],
+    ["a descending run", "ponmlkjihgfe"],
+    ["a keyboard row", "qwertyuiopas"],
+    ["a keyboard row reversed", "poiuytrewqas"],
+    ["a digit run inside a phrase", "meadow1234567lantern"],
+  ])("rejects %s as sequential", (_label, password) => {
+    expect(checkPassword(password).reasons).toContain("sequential");
+  });
+
+  it("does not reject ordinary passphrases as sequential or repetitive", () => {
+    // The threshold matters: too eager and real passwords fail. These must all pass.
+    for (const good of [
+      "meadow lantern cobble drift",
+      "correct horse battery staple",
+      "the quick brown fox jumped",
+      "Tr0ub4dor&3xample",
+    ]) {
+      const verdict = checkPassword(good);
+      expect(verdict.reasons, `false positive on "${good}"`).not.toContain("sequential");
+      expect(verdict.reasons, `false positive on "${good}"`).not.toContain("repetitive");
+    }
+  });
+});
+
+describe("configurable composition (compliance, not security)", () => {
+  const PHRASE = "meadow lantern cobble drift";
+
+  it("accepts a letters-only passphrase under the default NIST policy", () => {
+    expect(checkPassword(PHRASE, {}, NIST_POLICY).ok).toBe(true);
+  });
+
+  it("refuses that same passphrase under PCI DSS, which mandates a digit", () => {
+    // PCI DSS 4.0 §8.3.6: twelve characters AND both numeric and alphabetic. An auditor
+    // reading that checklist is not persuaded by a citation of NIST.
+    const verdict = checkPassword(PHRASE, {}, PCI_DSS_POLICY);
+    expect(verdict.reasons).toContain("missing-digit");
+  });
+
+  it("accepts a passphrase with a digit under PCI DSS", () => {
+    expect(checkPassword("meadow lantern cobble drift 7", {}, PCI_DSS_POLICY).ok).toBe(true);
+  });
+
+  it("does not mandate symbols or mixed case under PCI DSS", () => {
+    // A policy stricter than the standard it cites is still a policy nobody chose.
+    expect(PCI_DSS_POLICY.requireSymbol).toBe(false);
+    expect(PCI_DSS_POLICY.requireMixedCase).toBe(false);
+  });
+
+  it("reports every unmet requirement, not just the first", () => {
+    const strict = {
+      ...NIST_POLICY,
+      requireDigit: true,
+      requireSymbol: true,
+      requireMixedCase: true,
+    };
+    const reasons = checkPassword("meadow lantern cobble", {}, strict).reasons;
+    expect(reasons).toEqual(
+      expect.arrayContaining(["missing-digit", "missing-symbol", "missing-mixed-case"]),
+    );
+  });
+
+  it("selects a policy by name, defaulting to NIST for anything unrecognised", () => {
+    expect(policyByName("pci")).toBe(PCI_DSS_POLICY);
+    expect(policyByName("PCI")).toBe(PCI_DSS_POLICY);
+    expect(policyByName("nist")).toBe(NIST_POLICY);
+    expect(policyByName(undefined)).toBe(NIST_POLICY);
+    // Unrecognised must fall back to a real policy, never to "no policy".
+    expect(policyByName("whatever")).toBe(NIST_POLICY);
+  });
+
+  it("counts Unicode letters and digits, not just ASCII", () => {
+    const pci = checkPassword("meadow lantern ünïcode ٧", {}, PCI_DSS_POLICY);
+    expect(pci.reasons).not.toContain("missing-letter");
+    expect(pci.reasons).not.toContain("missing-digit");
   });
 });
