@@ -590,10 +590,12 @@ h2 {
 }
 
 @media (min-width: 560px) {
-  /* Not 1fr 1fr: "White-Label Agency — $999/mo" needs roughly twice the room a seat
-     count does, and an even split clips the very text that drives the choice. */
+  /* Equal, as the name implies. This was briefly 2fr 1fr to stop a plan dropdown
+     clipping; the plan then moved to its own row and the ratio stayed, silently skewing
+     every OTHER pair — two name fields of different widths on two different forms. A
+     class named for its structure must not carry one caller's proportions. */
   .row-2 {
-    grid-template-columns: 2fr 1fr;
+    grid-template-columns: 1fr 1fr;
   }
   .auth-card {
     padding: 2.25rem 2rem;
@@ -900,4 +902,56 @@ th.num {
   min-height: var(--tap);
   padding: 0 0.8rem;
   font-size: 0.82rem;
+}
+
+/* ---- Data-entry forms inside a panel ----------------------------------
+ * A panel spans the console, but an INPUT should not. A single address field a
+ * thousand pixels wide is hard to scan back along and hard to correct — the same
+ * measure argument that applies to running text applies to a field's contents.
+ */
+.entry-form {
+  max-width: 46rem;
+}
+/* Groups the flat run of fields into the three things an operator is actually
+   entering: who it is for, where it goes, and what the job is. */
+.field-group {
+  border: none;
+  margin: 0 0 1.5rem;
+  padding: 0;
+}
+.field-group:last-of-type {
+  margin-bottom: 0;
+}
+/* A rule above each group after the first. Without it the legends carried the same
+   weight as the panel title and read as its siblings rather than its children — the
+   grouping was present in the markup and invisible on the page. */
+.field-group + .field-group {
+  border-top: 1px solid var(--rule-soft);
+  padding-top: 1.4rem;
+}
+.field-group > legend {
+  font-family: var(--fs-display);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  padding: 0;
+  margin-bottom: 0.7rem;
+}
+.entry-form .form-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+.entry-form .form-actions .btn {
+  width: 100%;
+}
+
+@media (min-width: 640px) {
+  /* Sized to its label once there is room; full width is a phone affordance, not a
+     statement about importance. */
+  .entry-form .form-actions .btn {
+    width: auto;
+    min-width: 12rem;
+  }
 }

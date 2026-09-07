@@ -167,79 +167,88 @@ export default async function OrdersBoard({
           {can(membership.role, "orders:create") ? (
             <section className="panel">
               <h2 className="panel-title">New job</h2>
-              <form action={createOrderAction}>
+              <form action={createOrderAction} className="entry-form">
                 <input type="hidden" name="tenantId" value={tenantId} />
 
-                {/* First and last separately: one free-text name cannot tell two
-                    customers called John Smith apart. Deliberately NOT unique — two
-                    customers genuinely can share a name, and the phone is what
-                    identifies them (and what masked calling will key off). */}
-                <div className="row-2">
-                  <div className="field">
-                    <label htmlFor="customerFirstName">Customer first name</label>
-                    <input id="customerFirstName" name="customerFirstName" required />
+                {/* Grouped into the three things an operator is actually entering: who
+                    it is for, where it goes, and what the job is. A flat run of seven
+                    fields reads as one undifferentiated list. */}
+                <fieldset className="field-group">
+                  <legend>Customer</legend>
+
+                  {/* First and last separately: one free-text name cannot tell two
+                      customers called John Smith apart. Deliberately NOT unique — two
+                      customers genuinely can share a name, and the phone is what
+                      identifies them (and what masked calling will key off). */}
+                  <div className="row-2">
+                    <div className="field">
+                      <label htmlFor="customerFirstName">First name</label>
+                      <input id="customerFirstName" name="customerFirstName" required />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="customerLastName">Last name</label>
+                      <input id="customerLastName" name="customerLastName" required />
+                    </div>
                   </div>
+
                   <div className="field">
-                    <label htmlFor="customerLastName">Customer last name</label>
-                    <input id="customerLastName" name="customerLastName" required />
+                    <label htmlFor="customerPhone">Phone</label>
+                    <input id="customerPhone" name="customerPhone" type="tel" inputMode="tel" />
+                    <span className="hint">
+                      How this customer is identified — two people can share a name.
+                    </span>
                   </div>
-                </div>
+                </fieldset>
 
-                <div className="field">
-                  <label htmlFor="customerPhone">Customer phone</label>
-                  <input id="customerPhone" name="customerPhone" type="tel" inputMode="tel" />
-                  <span className="hint">
-                    How this customer is identified — two people can share a name.
-                  </span>
-                </div>
+                <fieldset className="field-group">
+                  <legend>Route</legend>
 
-                <div className="field">
-                  <label htmlFor="pickupAddress">Pick up from</label>
-                  <input id="pickupAddress" name="pickupAddress" required />
-                </div>
-
-                <div className="field">
-                  <label htmlFor="dropoffAddress">Deliver to</label>
-                  <input id="dropoffAddress" name="dropoffAddress" required />
-                </div>
-
-                <div className="row-2">
                   <div className="field">
-                    <label htmlFor="type">Job type</label>
-                    <select id="type" name="type" defaultValue="fixed_pickup">
-                      {CREATABLE_TYPES.map((t) => (
-                        <option key={t} value={t}>
-                          {TYPE_LABELS[t]}
-                        </option>
-                      ))}
-                    </select>
+                    <label htmlFor="pickupAddress">Pick up from</label>
+                    <input id="pickupAddress" name="pickupAddress" required />
                   </div>
+
                   <div className="field">
-                    <label htmlFor="price">Price</label>
-                    <input
-                      id="price"
-                      name="price"
-                      inputMode="decimal"
-                      placeholder="49.50"
-                      defaultValue="0"
-                    />
-                    <span className="hint">In dollars. Stored as whole cents.</span>
+                    <label htmlFor="dropoffAddress">Deliver to</label>
+                    <input id="dropoffAddress" name="dropoffAddress" required />
                   </div>
-                </div>
+                </fieldset>
 
-                <div className="field">
-                  <label htmlFor="scheduledFor">Scheduled for</label>
-                  <input id="scheduledFor" name="scheduledFor" type="datetime-local" />
-                  <span className="hint">
-                    Required for a scheduled courier run — the exact time window is the
-                    product for that type.
-                  </span>
-                </div>
+                <fieldset className="field-group">
+                  <legend>Job</legend>
 
-                <div className="field">
-                  <label htmlFor="notes">Notes for the driver</label>
-                  <input id="notes" name="notes" />
-                </div>
+                  <div className="row-2">
+                    <div className="field">
+                      <label htmlFor="type">Job type</label>
+                      <select id="type" name="type" defaultValue="fixed_pickup">
+                        {CREATABLE_TYPES.map((t) => (
+                          <option key={t} value={t}>
+                            {TYPE_LABELS[t]}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="price">Price</label>
+                      <input id="price" name="price" inputMode="decimal" placeholder="49.50" />
+                      <span className="hint">In dollars, e.g. 49.50.</span>
+                    </div>
+                  </div>
+
+                  <div className="field">
+                    <label htmlFor="scheduledFor">Scheduled for</label>
+                    <input id="scheduledFor" name="scheduledFor" type="datetime-local" />
+                    <span className="hint">
+                      Only used for a scheduled courier run, where the exact time window is
+                      the product. Leave blank for any other job type.
+                    </span>
+                  </div>
+
+                  <div className="field">
+                    <label htmlFor="notes">Notes for the driver</label>
+                    <input id="notes" name="notes" />
+                  </div>
+                </fieldset>
 
                 <div className="form-actions">
                   <button className="btn btn-primary" type="submit">

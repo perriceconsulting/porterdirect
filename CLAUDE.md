@@ -48,6 +48,11 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
 - **Webhook double-apply.** Stripe re-delivers events; without idempotency a retry applies
   twice. `processed_webhook_events` + `handleStripeEvent` make it exactly-once.
 - **Money as float.** All amounts are integer cents. Never introduce floating-point money.
+- **A layout class named for its STRUCTURE must not carry one caller's proportions.**
+  `.row-2` was set to `2fr 1fr` to stop a plan dropdown clipping; the dropdown later
+  moved to its own row and the ratio stayed, silently skewing every other pair — two
+  name fields at different widths on two forms. Nothing failed, nothing logged; it was
+  visible only in a screenshot. There is now an e2e test that MEASURES paired fields.
 - **Stripping commas from a typed amount is a hundredfold bug.** `12,34` is decimal
   notation across most of Europe; treating the comma as a thousands separator turns
   $12.34 into $1,234 silently, on an invoice. `parseUsdToCents` accepts commas ONLY in
@@ -597,3 +602,22 @@ live-map reactivity.
     orders to preserve, it was done as two unambiguous migrations — drop, then add —
     rather than hand-writing SQL, so migrations stay generated from `schema.ts`.
   - Ratchets: tests = **264** + 6 PHAST + 25 e2e; client components = 1; lint = 0.
+
+- **2026-09-07 — Dispatch form: looked at it, then fixed what was wrong.**
+  - Asked whether the UI was right, the honest answer needed a screenshot rather than
+    reasoning. Three defects only visible that way:
+    - **Unequal name fields.** `.row-2` still carried `2fr 1fr` from a since-removed
+      dropdown fix, so "first name" rendered twice the width of "last name" — on the
+      dispatch form AND on signup. Now `1fr 1fr`, with an **e2e test that measures both
+      boxes** rather than trusting the stylesheet.
+    - **Fields a thousand pixels wide.** The measure argument for running text applies to
+      inputs: a long address is hard to scan back along and hard to correct. Constrained.
+    - **No grouping.** Seven fields in a flat run; now Customer / Route / Job, with a
+      hairline above each group — without it the legends carried the same weight as the
+      panel title and the grouping was present in the markup and invisible on the page.
+  - Also: price no longer defaults to `0`. A job priced at zero is a plausible typo to
+    leave in place, and a placeholder makes the operator state the number.
+  - Method note: two of the three were invisible to every test in the suite and to the
+    type checker. For anything a person looks at, **render it and look** — a screenshot is
+    a cheap test that catches a class nothing else does.
+  - Ratchets: tests = 264 + 6 PHAST + **27 e2e**; client components = 1; lint = 0.

@@ -391,3 +391,43 @@ test.describe("password policy", () => {
     await expect(page).not.toHaveURL(/error=password-policy/);
   });
 });
+
+test.describe("form layout", () => {
+  /**
+   * Regression: `.row-2` was set to `2fr 1fr` to stop one dropdown clipping, then the
+   * dropdown moved to its own row and the ratio stayed — silently skewing every other
+   * pair, so "first name" rendered twice the width of "last name" on two forms.
+   *
+   * A class named for its structure must not carry one caller's proportions, and the
+   * cheapest way to keep that true is to measure it.
+   */
+  test("paired name fields are equal width on a desktop viewport", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/signup");
+
+    const first = await page.locator('input[name="firstName"]').boundingBox();
+    const last = await page.locator('input[name="lastName"]').boundingBox();
+    expect(first).not.toBeNull();
+    expect(last).not.toBeNull();
+
+    // Same row, so same vertical position...
+    expect(Math.abs(first!.y - last!.y)).toBeLessThanOrEqual(1);
+    // ...and the same width, within a sub-pixel rounding tolerance.
+    expect(
+      Math.abs(first!.width - last!.width),
+      `first ${Math.round(first!.width)}px vs last ${Math.round(last!.width)}px`,
+    ).toBeLessThanOrEqual(1);
+  });
+
+  test("paired fields stack to full width on a phone", async ({ page }) => {
+    // Mobile-first: the base rule is one column, and the pair only splits when there is
+    // room. Two half-width inputs on a 375px screen is what the standard exists to stop.
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto("/signup");
+
+    const first = await page.locator('input[name="firstName"]').boundingBox();
+    const last = await page.locator('input[name="lastName"]').boundingBox();
+    expect(first!.y, "fields should stack, not sit side by side").toBeLessThan(last!.y);
+    expect(first!.width).toBeGreaterThan(250);
+  });
+});
