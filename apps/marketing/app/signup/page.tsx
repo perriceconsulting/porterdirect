@@ -8,6 +8,7 @@ import { PLANS, formatUsdCents } from "@porterdirect/billing";
 import { signUpAction } from "../actions";
 import type { FormErrorCode } from "../actions";
 import { SiteHeader } from "../_components/site-header";
+import { PasswordField } from "../_components/password-field";
 
 export const metadata = { title: "Start a subscription — PorterDirect" };
 
@@ -30,7 +31,12 @@ export default async function SignUp({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const params = await searchParams;
-  const message = MESSAGES[params.error as FormErrorCode];
+  // `password-policy` carries its own specific reason, so the generic map is
+  // bypassed — "use at least 12 characters" beats "weak password".
+  const message =
+    params.error === "password-policy"
+      ? (params.detail ?? "Choose a stronger password.")
+      : MESSAGES[params.error as FormErrorCode];
   const selectedPlan = params.plan ?? PLANS[0]!.id;
 
   return (
@@ -56,9 +62,30 @@ export default async function SignUp({
           ) : null}
 
           <form action={signUpAction}>
-            <div className="field">
-              <label htmlFor="name">Your name</label>
-              <input id="name" name="name" autoComplete="name" required />
+            {/* First and last captured separately: a single free-text name cannot tell
+                two people called John at the same operator apart, cannot be sorted by
+                surname, and cannot address someone correctly in a notification. */}
+            <div className="row-2">
+              <div className="field">
+                <label htmlFor="firstName">First name</label>
+                <input
+                  id="firstName"
+                  name="firstName"
+                  autoComplete="given-name"
+                  required
+                  defaultValue={params.firstName ?? ""}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="lastName">Last name</label>
+                <input
+                  id="lastName"
+                  name="lastName"
+                  autoComplete="family-name"
+                  required
+                  defaultValue={params.lastName ?? ""}
+                />
+              </div>
             </div>
 
             <div className="field">
@@ -73,18 +100,13 @@ export default async function SignUp({
               />
             </div>
 
-            <div className="field">
-              <label htmlFor="password">Password</label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="new-password"
-                minLength={12}
-                required
-              />
-              <span className="hint">At least 12 characters.</span>
-            </div>
+            <PasswordField
+              name="password"
+              label="Password"
+              autoComplete="new-password"
+              minLength={12}
+              hint="At least 12 characters."
+            />
 
             <div className="field">
               <label htmlFor="company">Company name</label>

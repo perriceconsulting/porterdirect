@@ -97,7 +97,19 @@ export type ProcessedWebhookEvent = typeof processedWebhookEvents.$inferSelect;
 
 export const users = pgTable("user", {
   id: text("id").primaryKey(),
+  /**
+   * Display name, kept because Better Auth requires it. It is DERIVED from the two
+   * fields below rather than being a separate source of truth.
+   */
   name: text("name").notNull(),
+  /**
+   * Structured name. A single free-text "name" cannot distinguish two people called
+   * John at the same operator, cannot be sorted by surname, and cannot address someone
+   * correctly in a notification. Both are captured at signup so neither has to be
+   * guessed at by splitting a string later.
+   */
+  firstName: text("first_name"),
+  lastName: text("last_name"),
   email: text("email").notNull(),
   emailVerified: boolean("email_verified").notNull().default(false),
   image: text("image"),

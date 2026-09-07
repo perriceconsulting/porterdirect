@@ -17,6 +17,7 @@ import { redirect } from "next/navigation";
 import { classifyAuthError, isRedirectError, type AuthFailure } from "@porterdirect/auth";
 import { getAuth } from "../lib/auth";
 import { createCheckoutSession, provisionTenant } from "../lib/provisioning";
+import { validatePassword } from "../lib/password";
 
 export type FormErrorCode =
   | "missing-fields"
@@ -29,6 +30,9 @@ export type FormErrorCode =
   | "unknown-plan"
   | "rate-limited"
   | "checkout-failed"
+  | "invalid-token"
+  | "password-mismatch"
+  | "password-policy"
   | "unknown";
 
 function back(path: string, code: FormErrorCode, keep?: Record<string, string>): never {
@@ -82,6 +86,75 @@ export async function signInAction(data: FormData): Promise<void> {
   redirect("/welcome");
 }
 
+/**
+ * Request a password-reset link.
+ *
+ * ALWAYS reports the same outcome, whether or not an account exists for that address.
+ * A form that says "no account found" is the account-enumeration oracle we closed on
+ * sign-in, reopened on a page that does not even require a password to probe.
+ */
+export async function requestResetAction(data: FormData): Promise<void> {
+  const email = str(data, "email");
+  if (!email) back("/forgot", "missing-fields");
+
+  try {
+    await getAuth().api.requestPasswordReset({
+      body: { email, redirectTo: "/reset" },
+      headers: await headers(),
+    });
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+
+    // Swallowing is deliberate — surfacing this would leak whether the address exists,
+    // or that delivery failed for that address specifically.
+    //
+    // But swallowing hides OUR bugs too, and it already did: this called a method name
+    // that does not exist (`forgetPassword` vs `requestPasswordReset`), the TypeError
+    // was swallowed here, and the page cheerfully reported "check your inbox" while
+    // nothing was ever sent. So an error that is NOT a recognisable auth failure is
+    // rethrown in development, where it is a defect rather than a privacy concern.
+    console.error("[forgot] request failed:", err instanceof Error ? err.message : err);
+    const recognised = classifyAuthError(err) !== "unknown";
+    if (!recognised && process.env.NODE_ENV !== "production") throw err;
+  }
+
+  redirect("/forgot?sent=1");
+}
+
+/** Complete a reset using the token from the emailed link. */
+export async function resetPasswordAction(data: FormData): Promise<void> {
+  const password = str(data, "password");
+  const confirm = str(data, "confirm");
+  const token = str(data, "token");
+
+  if (!token) back("/reset", "invalid-token");
+  if (!password || !confirm) back("/reset", "missing-fields", { token });
+  if (password !== confirm) back("/reset", "password-mismatch", { token });
+
+  // The same policy as signup. A reset must not be a way to set a password that signup
+  // would have refused.
+  const passwordProblem = await validatePassword(password);
+  if (passwordProblem) back("/reset", "password-policy", { token, detail: passwordProblem });
+
+  try {
+    await getAuth().api.resetPassword({
+      body: { newPassword: password, token },
+      headers: await headers(),
+    });
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+    if (classifyAuthError(err) === "weak-password") {
+      back("/reset", "weak-password", { token });
+    }
+    // Anything else here means the token is spent, expired or forged. Say so, rather
+    // than "something went wrong" — the user needs to know to request a new link.
+    console.error("[reset] failed:", err instanceof Error ? err.message : err);
+    back("/reset", "invalid-token");
+  }
+
+  redirect("/signin?reset=1");
+}
+
 export async function signOutAction(): Promise<void> {
   await getAuth().api.signOut({ headers: await headers() });
   redirect("/");
@@ -95,7 +168,11 @@ export async function signOutAction(): Promise<void> {
  * webhook resolves back to the tenant through that customer id (see provisioning.ts).
  */
 export async function signUpAction(data: FormData): Promise<void> {
-  const name = str(data, "name");
+  const firstName = str(data, "firstName");
+  const lastName = str(data, "lastName");
+  // `name` stays DERIVED — one source of truth for the person's name, two structured
+  // parts plus a display form composed from them.
+  const name = [firstName, lastName].filter(Boolean).join(" ");
   const email = str(data, "email");
   const password = str(data, "password");
   const company = str(data, "company");
@@ -103,18 +180,26 @@ export async function signUpAction(data: FormData): Promise<void> {
   const planId = str(data, "plan");
   const seatsRaw = str(data, "seats");
 
-  const keep = { email, company, host, plan: planId, seats: seatsRaw };
-  if (!name || !email || !password || !company || !host || !planId) {
+  const keep = { email, company, host, plan: planId, seats: seatsRaw, firstName, lastName };
+  if (!firstName || !lastName || !email || !password || !company || !host || !planId) {
     back("/signup", "missing-fields", keep);
   }
 
   const seats = Number.parseInt(seatsRaw || "1", 10);
   if (!Number.isInteger(seats) || seats < 1) back("/signup", "missing-fields", keep);
 
+  // Checked BEFORE the account is created, so a rejected password never leaves a
+  // half-made user behind — and the message says what is actually wrong rather than a
+  // generic "weak password".
+  const passwordProblem = await validatePassword(password, { email });
+  if (passwordProblem) {
+    back("/signup", "password-policy", { ...keep, detail: passwordProblem });
+  }
+
   let userId: string;
   try {
     const result = await getAuth().api.signUpEmail({
-      body: { email, password, name },
+      body: { email, password, name, firstName, lastName },
       headers: await headers(),
     });
     userId = result.user.id;

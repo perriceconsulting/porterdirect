@@ -15,6 +15,13 @@
       "when": 1788779666436,
       "tag": "0001_dizzy_mulholland_black",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788784962195,
+      "tag": "0002_faithful_cyclops",
+      "breakpoints": true
     }
   ]
 }

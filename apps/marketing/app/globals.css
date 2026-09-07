@@ -599,3 +599,64 @@ h2 {
     padding: 2.25rem 2rem;
   }
 }
+
+/* ---- Password field with reveal toggle --------------------------------
+ * The toggle sits inside the input's box, so the input reserves padding for it — text
+ * must never run underneath the button, and the button must still be a real 44px
+ * target rather than a decorative icon.
+ */
+.password-wrap {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+.password-wrap .password-input {
+  padding-right: calc(var(--tap) + 0.25rem);
+}
+.password-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  min-height: var(--tap);
+  min-width: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 0 4px 4px 0;
+  color: var(--ink-3);
+  cursor: pointer;
+  padding: 0;
+}
+.password-toggle:hover {
+  color: var(--ink);
+}
+.password-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  color: var(--ink);
+}
+.field-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.field-row a {
+  font-size: 0.85rem;
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+}
+.notice {
+  background: var(--good-bg);
+  border: 1px solid var(--good);
+  border-radius: 4px;
+  padding: 0.7rem 0.85rem;
+  margin: 0 0 1.25rem;
+  font-size: 0.9rem;
+  color: var(--ink);
+}

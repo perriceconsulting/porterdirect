@@ -7,6 +7,7 @@
  */
 import { headers } from "next/headers";
 import { nextCookies } from "better-auth/next-js";
+import { sendEmail } from "./email";
 import { createDbClient } from "@porterdirect/db";
 import {
   authorize,
@@ -25,7 +26,10 @@ import {
  * globalThis with a contract version — a stale instance surviving a config change is
  * the same trap the webhook adapters hit.
  */
-const AUTH_CONTRACT_VERSION = 1;
+// Bump whenever createAuth's CONFIG changes, not just its shape: a cached instance
+// built from the old config keeps serving it, and a newly-enabled endpoint 404s
+// with no indication why. Adding sendResetPassword did exactly that.
+const AUTH_CONTRACT_VERSION = 3;
 const g = globalThis as unknown as Record<string, unknown>;
 const authKey = `__pdAuth_v${AUTH_CONTRACT_VERSION}`;
 
@@ -40,6 +44,21 @@ export function getAuth(): Auth {
     // Lets a server action set the session cookie. Injected here rather than in the
     // auth package so that package stays framework-agnostic for the driver app.
     plugins: [nextCookies()],
+    sendResetPassword: async ({ user, url }) => {
+      await sendEmail({
+        to: user.email,
+        subject: "Reset your PorterDirect password",
+        text:
+          `Someone asked to reset the password for this PorterDirect account.
+
+` +
+          `${url}
+
+` +
+          `This link expires in one hour and can be used once. If it wasn't you, ` +
+          `ignore this message — nothing has changed.`,
+      });
+    },
   });
   g[authKey] = built;
   return built;

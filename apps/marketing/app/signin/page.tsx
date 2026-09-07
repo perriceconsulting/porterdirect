@@ -5,6 +5,7 @@
 import { signInAction } from "../actions";
 import type { FormErrorCode } from "../actions";
 import { SiteHeader } from "../_components/site-header";
+import { PasswordField } from "../_components/password-field";
 
 export const metadata = { title: "Sign in — PorterDirect" };
 
@@ -23,7 +24,7 @@ const MESSAGES: Partial<Record<FormErrorCode, string>> = {
 export default async function SignIn({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; email?: string }>;
+  searchParams: Promise<{ error?: string; email?: string; reset?: string }>;
 }) {
   const params = await searchParams;
   const message = MESSAGES[params.error as FormErrorCode];
@@ -40,6 +41,12 @@ export default async function SignIn({
         <div className="auth-card">
           <h1>Sign in</h1>
           <p className="sub">Operator access to your dispatch platform.</p>
+
+          {params.reset ? (
+            <p className="notice" role="status">
+              Your password has been changed. Sign in with it now.
+            </p>
+          ) : null}
 
           {message ? (
             <p className="error" role="alert">
@@ -60,16 +67,15 @@ export default async function SignIn({
               />
             </div>
 
-            <div className="field">
-              <label htmlFor="password">Password</label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-              />
-            </div>
+            <PasswordField
+              name="password"
+              label="Password"
+              autoComplete="current-password"
+            />
+
+            <p className="field-row" style={{ marginTop: "-0.5rem" }}>
+              <a href="/forgot">Forgot your password?</a>
+            </p>
 
             <div className="form-actions">
               <button className="btn btn-primary" type="submit">

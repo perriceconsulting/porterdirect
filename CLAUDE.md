@@ -27,6 +27,7 @@ agencies) who run the physical work under their own brand + domain.
 | DB migrations | [packages/db/drizzle/](packages/db/drizzle/) | GENERATED from `schema.ts` via `npm run db:generate` — never hand-write DDL |
 | Env file reading | [scripts/lib/load-env.sh](scripts/lib/load-env.sh) | The only place a secrets file is read; parses as data, never sourced |
 | Authorization policy | [packages/auth/src/permissions.ts](packages/auth/src/permissions.ts) | The role→permission matrix; pure, exhaustive, no inheritance chain |
+| Password policy | [packages/auth/src/password-policy.ts](packages/auth/src/password-policy.ts) | NIST SP 800-63B: length + breach checking, deliberately NO composition rules |
 | Host → tenant classification | [packages/auth/src/tenant-host.ts](packages/auth/src/tenant-host.ts) | One normalisation, so every surface agrees what "same host" means |
 
 Local copies that must **reconcile back** (DOSI-S caveat): the `subscriptions` DB row
@@ -406,3 +407,44 @@ live-map reactivity.
     now opt-in, because Next skips (and warns about) auto-scroll when the element it would
     focus is sticky — worth it on the long marketing page, pure noise on a short form.
   - Ratchets: tests = **169** + 6 PHAST + **11 e2e**; client components = 0; lint = 0.
+
+- **2026-09-07 — Password reveal, reset flow, structured names, password policy.**
+  - **Password policy follows NIST SP 800-63B**, and the shape of that is a decision worth
+    defending: minimum 12 (well above the NIST floor of 8), generous 128 maximum, spaces
+    and Unicode allowed, and **deliberately NO required character classes** — composition
+    rules produce `Password1!` and push people toward reuse. What NIST does require and we
+    were missing is **breach checking**, now done via HIBP k-anonymity: only the first five
+    characters of the SHA-1 hash ever leave the process. It **fails open**, because
+    blocking all signup over a third-party outage is the worse failure. Also refused:
+    passwords containing the account's own email local part or the product name. Length is
+    counted in CODE POINTS — `.length` would let six emoji pass as twelve characters.
+  - **Forgot-password** implemented; **"forgot email" was not**, and will not be. Any form
+    that confirms an address has an account is an enumeration oracle, and this one needs no
+    password to probe. Recovering an email is a support process with identity
+    verification, not a page. The reset confirmation is byte-identical for known and
+    unknown addresses, asserted in e2e.
+  - **A swallowed error hid a real bug.** The reset request called `forgetPassword`, which
+    does not exist in Better Auth 1.7 (`requestPasswordReset` does). The TypeError was
+    caught by the anti-enumeration catch and the page cheerfully reported "check your
+    inbox" while nothing was sent. Unrecognised errors are now RETHROWN in development,
+    where they are a defect rather than a privacy concern. Any catch that exists for
+    security reasons needs this escape hatch.
+  - Email has no provider yet: development prints the reset link to the server console and
+    **production throws**. A sender that silently succeeds is worse than an outage, because
+    nobody investigates it.
+  - **First client component** (`PasswordField`), because nothing in CSS can change an
+    input's `type`. Ratchet moves 0 → 1 for a real capability, scoped to one field. Without
+    JS the field still works and the toggle simply does nothing.
+  - **Structured names.** `first_name`/`last_name` captured at signup with `name` derived
+    from them — a single free-text name cannot distinguish two people called John at one
+    operator, cannot sort by surname, and cannot address anyone correctly.
+  - Cross-suite interference found and fixed: the e2e cleanup deleted every
+    `%@example.test` user, which is also what the membership integration tests use — one
+    suite deleting another's fixtures mid-run against the shared database. It surfaced once
+    as an unreproducible failure. Cleanup is now scoped to a per-run domain.
+  - The auth instance is cached on `globalThis` with a contract version, and it needed
+    bumping TWICE here — a config change alone leaves the cached instance serving the old
+    config, and a newly-enabled endpoint 404s with no clue why. Bump on config changes,
+    not only shape changes.
+  - Ratchets: tests = **189** + 6 PHAST + **25 e2e**; client components = **1** (was 0,
+    with reason); lint = 0.
