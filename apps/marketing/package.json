@@ -15,7 +15,8 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "stripe": "^17.4.0",
-    "@porterdirect/auth": "*"
+    "@porterdirect/auth": "*",
+    "@porterdirect/orders": "*"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",

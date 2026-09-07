@@ -202,21 +202,28 @@ export default async function Console({
             </section>
           </div>
 
-          {/*
-            Named honestly. An empty widget labelled "Live map" would imply a feature
-            that does not exist; saying so outright is more useful than a placeholder
-            that looks like a loading state.
-          */}
-          <section className="panel muted">
+          <section className="panel">
             <h2 className="panel-title">Dispatch</h2>
             <p className="sub">
-              Orders, drivers and the live fleet map are not built yet. When they are, this
-              is where they will live — the back-office surface described in the product
-              brief: fleet-wide view, on-shift drivers only, and an audit trail of who
-              viewed whom.
+              Create and move jobs, and see the full chain-of-custody trail for each one.
             </p>
-            <p className="hint">
-              Nothing here is hidden behind a setting. It genuinely does not exist yet.
+            <p className="form-actions">
+              <a className="btn btn-primary" href={`/dashboard/${tenantId}/orders`}>
+                Open the dispatch board
+              </a>
+            </p>
+          </section>
+
+          {/*
+            Still named honestly. An empty widget labelled "Live map" would imply a
+            feature that exists; saying plainly that it does not is more useful.
+          */}
+          <section className="panel muted">
+            <h2 className="panel-title">Live fleet map</h2>
+            <p className="sub">
+              Driver apps, shifts and the live map are not built yet. Location is already
+              modelled as visible only while an order is live — see any job's detail page —
+              but nothing is reporting positions into it.
             </p>
           </section>
         </div>

@@ -198,3 +198,118 @@ export type Session = typeof sessions.$inferSelect;
 export type TenantMember = typeof tenantMembers.$inferSelect;
 export type NewTenantMember = typeof tenantMembers.$inferInsert;
 export type TenantRole = (typeof tenantRole.enumValues)[number];
+
+/* ===========================================================================
+ * Orders — the job itself.
+ * =========================================================================== */
+
+export const orderType = pgEnum("order_type", [
+  "fixed_pickup",
+  "shop_in_store",
+  "errand",
+  "scheduled_courier",
+]);
+
+export const orderStatus = pgEnum("order_status", [
+  "pending",
+  "assigned",
+  "shopping",
+  "checkout",
+  "en_route",
+  "delivered",
+  "cancelled",
+  "failed",
+]);
+
+/**
+ * A job. Tenant-scoped like everything owned, and enum-typed on both `type` and
+ * `status` so an impossible value fails on write rather than reaching the state
+ * machine as a string nothing matches.
+ *
+ * MONEY IS INTEGER CENTS throughout. `authorized` and `captured` exist separately
+ * because a shop-in-store job pre-authorises an estimate and captures the true total
+ * later; the invariant `captured <= authorized` is enforced in the domain layer, since
+ * the database cannot express it across a nullable pair without a check constraint that
+ * would also have to know the order type.
+ */
+export const orders = pgTable(
+  "orders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+
+    /** Short human reference an operator can read down a phone. Unique per tenant. */
+    reference: text("reference").notNull(),
+
+    type: orderType("type").notNull(),
+    status: orderStatus("status").notNull().default("pending"),
+
+    customerName: text("customer_name").notNull(),
+    customerPhone: text("customer_phone"),
+
+    pickupAddress: text("pickup_address").notNull(),
+    dropoffAddress: text("dropoff_address").notNull(),
+    notes: text("notes"),
+
+    /** Quoted to the customer, in cents. */
+    priceCents: integer("price_cents").notNull().default(0),
+    /** Variable-total jobs only: pre-authorised estimate plus buffer. */
+    authorizedCents: integer("authorized_cents"),
+    /** Variable-total jobs only: the true total taken at the till. */
+    capturedCents: integer("captured_cents"),
+
+    /** The driver holding it. Null until assigned; a member of THIS tenant. */
+    assignedUserId: text("assigned_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true }),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // Unique PER TENANT, not globally: two operators may both have an "ORD-1042", and a
+    // global unique index would leak the platform's total order count through collisions.
+    tenantReferenceIdx: uniqueIndex("orders_tenant_reference_idx").on(t.tenantId, t.reference),
+    // The dispatch board's query: this tenant's orders, newest first.
+    tenantStatusIdx: index("orders_tenant_status_idx").on(t.tenantId, t.status),
+    assignedIdx: index("orders_assigned_idx").on(t.assignedUserId),
+  }),
+);
+
+/**
+ * Every state change, with who made it.
+ *
+ * This is the chain-of-custody trail the premium tier is sold on: not "the order is
+ * delivered" but "who moved it, when, and from what". Append-only by convention — there
+ * is deliberately no update path, because an editable audit log is not an audit log.
+ */
+export const orderEvents = pgTable(
+  "order_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    /** Null when the actor is the system rather than a person. */
+    actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    fromStatus: orderStatus("from_status"),
+    toStatus: orderStatus("to_status").notNull(),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orderIdx: index("order_events_order_idx").on(t.orderId, t.createdAt),
+    tenantIdx: index("order_events_tenant_idx").on(t.tenantId),
+  }),
+);
+
+export type Order = typeof orders.$inferSelect;
+export type NewOrder = typeof orders.$inferInsert;
+export type OrderEvent = typeof orderEvents.$inferSelect;

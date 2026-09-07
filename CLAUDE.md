@@ -27,6 +27,7 @@ agencies) who run the physical work under their own brand + domain.
 | DB migrations | [packages/db/drizzle/](packages/db/drizzle/) | GENERATED from `schema.ts` via `npm run db:generate` — never hand-write DDL |
 | Env file reading | [scripts/lib/load-env.sh](scripts/lib/load-env.sh) | The only place a secrets file is read; parses as data, never sourced |
 | Authorization policy | [packages/auth/src/permissions.ts](packages/auth/src/permissions.ts) | The role→permission matrix; pure, exhaustive, no inheritance chain |
+| Order lifecycle | [packages/orders/src/order-state.ts](packages/orders/src/order-state.ts) | Explicit transition table; terminal is terminal, no skipping, location bound to the order |
 | Password policy | [packages/auth/src/password-policy.ts](packages/auth/src/password-policy.ts) | NIST SP 800-63B: length + breach checking, deliberately NO composition rules |
 | Host → tenant classification | [packages/auth/src/tenant-host.ts](packages/auth/src/tenant-host.ts) | One normalisation, so every surface agrees what "same host" means |
 
@@ -499,3 +500,34 @@ live-map reactivity.
   - The unbuilt dispatch surface is labelled as unbuilt rather than mocked. An empty widget
     called "Live map" implies a feature; saying it does not exist is more useful.
   - Ratchets: tests = **208** + 6 PHAST + 25 e2e; client components = 1; lint = 0.
+
+- **2026-09-07 — Orders: the first real domain.**
+  - `@porterdirect/orders` holds the lifecycle as an explicit TRANSITION TABLE rather
+    than scattered `if (status === …)` checks, so every legal move is visible in one place
+    and an illegal one fails at the boundary. Two rules there are not conveniences:
+    **terminal is terminal** (reopening a delivered order would re-dispatch, re-bill and
+    resurrect a tracking session for a driver who may be off shift), and **no skipping**
+    (a jump to `delivered` bypasses proof of delivery, which is the evidence the premium
+    tier is sold on; a shopping job skipping the till never captures a true total).
+  - `isLocationVisible` is part of the state machine, not the UI. Location is scoped to an
+    ORDER, never to a person, and ends the moment the order does — asserted for every
+    terminal status.
+  - `nextStatuses` is the same table `canTransition` guards with, so the console cannot
+    offer a move the server would refuse. Tested: every offered move is a legal one.
+  - Persistence keeps `tenant_id` **inside the WHERE clause**, never as an
+    application-side filter afterwards. `findOrder` is scoped by both ids in one
+    predicate — fetching by order id and comparing the tenant later is the shape that
+    leaks, because the row is already in memory when the check is missed.
+  - The status update is scoped by the status it READ, so two concurrent transitions
+    cannot both succeed — the same atomic-claim shape as the webhook ledger, applied to a
+    different problem.
+  - `order_events` is append-only by convention: who moved the job, when, and from what.
+    An editable audit log is not an audit log.
+  - Order references are unique **per tenant**, not globally: two operators may both have
+    an "ORD-1042", and a global index would leak the platform's total order count through
+    collisions. The alphabet omits vowels and 0/O/1/I so a reference cannot spell anything
+    unfortunate and survives being read down a phone.
+  - Verified against the live database: illegal skips refused with the reason, terminal
+    states unreopenable, a shopping job unable to bypass the till, cross-tenant reads
+    returning null, and the full audit trail recorded.
+  - Ratchets: tests = **235** + 6 PHAST + 25 e2e; client components = 1; lint = 0.
