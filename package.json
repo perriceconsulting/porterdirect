@@ -17,12 +17,19 @@
     "stripe:doctor": "bash scripts/stripe-doctor.sh",
     "dev": "npm run dev -w @porterdirect/marketing",
     "stripe:listen": "bash scripts/stripe-listen.sh",
-    "stripe:prices": "tsx scripts/stripe-create-prices.ts"
+    "stripe:prices": "tsx scripts/stripe-create-prices.ts",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "verify:conventions": "bash scripts/verify-conventions.sh",
+    "verify": "npm run typecheck && npm run lint && npm run verify:conventions && npm test"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@types/node": "^20.17.0",
+    "eslint": "^9.39.5",
     "tsx": "^4.23.13",
     "typescript": "^5.6.3",
+    "typescript-eslint": "^8.69.0",
     "vitest": "^2.1.8"
   },
   "engines": {

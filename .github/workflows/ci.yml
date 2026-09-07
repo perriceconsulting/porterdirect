@@ -1,0 +1,52 @@
+name: CI
+
+# No remote exists yet, so this is inert until the repo is pushed. It lands now rather
+# than later because CI added after the fact inherits whatever drifted in the meantime.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Ordered cheapest-to-most-expensive so a broken build fails in seconds, and each
+      # step runs even if an earlier one failed — one push should surface every problem,
+      # not just the first.
+      - name: Typecheck
+        if: '!cancelled()'
+        run: npm run typecheck
+
+      - name: Lint
+        if: '!cancelled()'
+        run: npm run lint
+
+      - name: Conventions
+        if: '!cancelled()'
+        run: npm run verify:conventions
+
+      # The DB integration tests skip themselves when DATABASE_URL is absent rather than
+      # failing, so this runs green without a database. Set the secret to exercise them
+      # against a real branch; leave it unset and the rest of the suite still guards.
+      - name: Tests
+        if: '!cancelled()'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npm test

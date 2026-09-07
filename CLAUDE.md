@@ -210,3 +210,34 @@ live-map reactivity.
     arithmetic are one model, confirmed against the API rather than asserted.
   - Test data (3 customers, 3 tenants, subscriptions) deleted after verification.
   - Ratchets: tests = **64** (was 59); client components = 0; lint still not configured.
+
+- **2026-09-07 — Enforcement: lint, conventions guard, CI.**
+  - The standard says a rule a linter checks survives and a rule in prose erodes. This
+    turns the day's prose rules into build failures.
+  - **ESLint (flat config, type-aware).** `no-floating-promises` / `no-misused-promises`
+    are the highest-value rules here: idempotency, persistence and Stripe calls are all
+    async, and a dropped `await` on `claimEvent` or `upsert` fails silently and looks
+    exactly like success. Also mechanical now: `parseFloat` is banned outright (money is
+    integer cents), and `process.env` is banned inside `packages/**/src` so config comes
+    in as an argument and library tests need no environment (DOSI-S). Type-aware rules
+    are scoped to files that genuinely sit in a tsconfig project; package tests and
+    standalone scripts get `disableTypeChecked` rather than contorting the build configs.
+  - **`npm run verify:conventions`** covers what a linter cannot see because it lives in
+    shell and dotfiles: no script may source a `.env` file; env files must be `KEY=value`
+    with no space after `=` and no inline comment; `.env.local` and every sidecar
+    spelling must be gitignored; no key material in tracked files. Each check traces to a
+    defect this repo actually hit, and each was verified to FAIL on a planted violation —
+    a guard nobody has seen fail is not known to work.
+  - The key-material check separates real credentials from fixtures by ENTROPY (digits
+    AND uppercase) rather than an allowlist that would rot. An earlier version embedded
+    Python inside the shell script, broke on a quote, and still printed "ok"; it is now
+    grep + awk with an explicit filter-failure branch, because a guard that errors must
+    fail, never pass.
+  - **CI** (`.github/workflows/ci.yml`) runs typecheck → lint → conventions → tests, each
+    step with `if: '!cancelled()'` so one push surfaces every problem rather than only the
+    first. Inert until a remote exists — added now because CI retrofitted later inherits
+    whatever drifted meanwhile. DB integration tests skip without `DATABASE_URL`, so CI is
+    green without a database and exercises them when the secret is set.
+  - `npm run verify` runs the whole chain locally.
+  - Ratchets: tests = **64**; lint errors = **0** across **26** linted files (previously
+    "not configured" — this is the ratchet finally set); client components = 0.
