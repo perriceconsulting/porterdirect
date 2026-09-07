@@ -320,3 +320,25 @@ live-map reactivity.
     cache is invisible on the first round, which is the whole reason the repeated-rounds
     test exists.
   - Ratchets: tests = 121 unit/integration + **6 PHAST**; lint errors = 0.
+
+- **2026-09-07 — First real UI: the licensee-facing marketing and pricing surface.**
+  - Every price renders from the canonical catalogue at request time and is never typed
+    into the page. A hardcoded number here would be a THIRD copy — beside the catalogue
+    and the Stripe Prices that already mirror it — and the one customers read.
+  - `formatUsdCents` is the single money formatter: integer cents in, string out, never
+    routed through a float, and it **throws** on a non-integer rather than rounding.
+    A fractional amount reaching it means a float leaked in upstream, and rounding would
+    hide that at the exact moment it becomes a wrong price.
+  - Entirely **server components** — the client-component ratchet stays at 0. A marketing
+    page that ships JavaScript to render static prices is shipping work nobody asked for.
+  - **Mobile-first is structural, not a breakpoint trick.** Every base rule is the phone
+    rule and the file scales up: **2 `@media (min-width)` queries, 0 `@media (max-width)`**.
+    Buttons are `inline-flex` with `min-height: var(--tap)` (44px) — an `<a>` styled as a
+    button takes height from its text and silently ignores vertical padding, so it looks
+    big and taps small. Adjacent actions sit ≥ 8px apart.
+  - Method note worth keeping: the first ratchet measurement was WRONG — grepping
+    `max-width:` counted CSS properties (`max-width: 52ch`) as media queries and reported
+    the file as desktop-first. Count `@media (max-width`, not `max-width:`. A ratchet
+    measured loosely is worse than none, because it reports confidently.
+  - Ratchets: tests = **133** (was 121) + 6 PHAST; client components = **0**; lint = 0;
+    min-width:max-width media queries = **2:0**.

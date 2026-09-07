@@ -1,0 +1,427 @@
+/**
+ * PorterDirect marketing surface.
+ *
+ * MOBILE-FIRST is structural here, not a breakpoint trick: every base rule below is the
+ * phone rule, and `min-width` queries scale UP. There are deliberately zero `max-width`
+ * queries — a stylesheet whose max-width queries outnumber its min-width queries is
+ * desktop-first wearing a disguise (CLAUDE.md).
+ *
+ * Touch targets are >= 44px with >= 8px between them. An <a> styled as a button is set
+ * to inline-flex with an explicit min-height, because an inline element takes its height
+ * from its text and silently ignores vertical padding — it looks big and taps small.
+ */
+
+:root {
+  --paper: #eef1f4;
+  --surface: #ffffff;
+  --surface-2: #f7f9fa;
+  --ink: #131a21;
+  --ink-2: #47535f;
+  --ink-3: #78848f;
+  --rule: #d3dae1;
+  --rule-soft: #e4e9ed;
+  --accent: #c2410c;
+  --accent-ink: #ffffff;
+  --accent-bg: #fbede5;
+  --good: #14663e;
+  --good-bg: #e4f1ea;
+
+  --fs-display: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --fs-body: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --fs-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --tap: 44px;
+  --shell: 72rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #10151a;
+    --surface: #171d24;
+    --surface-2: #1d242b;
+    --ink: #e7edf3;
+    --ink-2: #a7b3bf;
+    --ink-3: #6e7a86;
+    --rule: #2b333b;
+    --rule-soft: #232a31;
+    --accent: #f0834a;
+    --accent-ink: #10151a;
+    --accent-bg: #2c1b12;
+    --good: #4fcf95;
+    --good-bg: #12291f;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--fs-body);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.shell {
+  width: 100%;
+  max-width: var(--shell);
+  margin: 0 auto;
+  padding: 0 1.25rem;
+}
+
+/* ---- Header ---------------------------------------------------------- */
+.site-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+.site-header .shell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 60px;
+}
+.wordmark {
+  font-family: var(--fs-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+}
+.wordmark span {
+  color: var(--accent);
+}
+.header-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ---- Buttons: real tap targets, not text with padding ---------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap);
+  padding: 0 1.1rem;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  font-family: var(--fs-display);
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.btn-primary:hover {
+  background: color-mix(in srgb, var(--accent) 88%, black);
+}
+.btn-quiet {
+  background: transparent;
+  color: var(--ink-2);
+  border-color: var(--rule);
+}
+.btn-quiet:hover {
+  border-color: var(--ink-3);
+  color: var(--ink);
+}
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Hero ------------------------------------------------------------ */
+.hero {
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+  padding: 3rem 0 3.5rem;
+}
+.eyebrow {
+  font-family: var(--fs-mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 0.9rem;
+}
+h1 {
+  font-family: var(--fs-display);
+  font-weight: 700;
+  /* clamp() rather than a fixed size, so the headline never pushes the page off a
+     small screen the way a hard pixel value does. */
+  font-size: clamp(2.1rem, 8vw, 3.6rem);
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+  margin: 0 0 1rem;
+  max-width: 18ch;
+  text-wrap: balance;
+}
+.hero p.lede {
+  font-size: 1.05rem;
+  color: var(--ink-2);
+  max-width: 52ch;
+  margin: 0 0 1.75rem;
+}
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem; /* >= 8px so two correct-sized buttons cannot misfire into each other */
+}
+
+/* ---- Value props ----------------------------------------------------- */
+.props {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1px;
+  background: var(--rule);
+  border-block: 1px solid var(--rule);
+}
+.prop {
+  background: var(--paper);
+  padding: 1.75rem 1.25rem;
+}
+.prop h3 {
+  font-family: var(--fs-display);
+  font-size: 1rem;
+  margin: 0 0 0.4rem;
+  letter-spacing: -0.01em;
+}
+.prop p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 0.92rem;
+}
+
+/* ---- Sections -------------------------------------------------------- */
+.section {
+  padding: 3rem 0;
+}
+.section-head {
+  max-width: 46ch;
+  margin-bottom: 2rem;
+}
+h2 {
+  font-family: var(--fs-display);
+  font-weight: 700;
+  font-size: clamp(1.6rem, 5vw, 2.2rem);
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  margin: 0 0 0.6rem;
+  text-wrap: balance;
+}
+.section-head p {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+/* ---- Pricing --------------------------------------------------------- */
+.tiers {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+.tier {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 1.5rem 1.35rem 1.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+/* Only the featured tier is lifted. Border, fill and shadow each say "separate
+   object"; spending them on every card flattens the hierarchy instead of building it. */
+.tier.featured {
+  border-color: var(--accent);
+  box-shadow: 0 1px 0 var(--accent) inset, 0 0 0 1px var(--accent);
+}
+.tier-name {
+  font-family: var(--fs-display);
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: -0.015em;
+  margin: 0;
+}
+.tier-badge {
+  display: inline-block;
+  font-family: var(--fs-mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-radius: 2px;
+  padding: 0.2rem 0.45rem;
+  margin-left: 0.5rem;
+  vertical-align: 0.15em;
+}
+.price {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-variant-numeric: tabular-nums;
+}
+.price .amount {
+  font-family: var(--fs-display);
+  font-weight: 700;
+  font-size: 2.5rem;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+.price .per {
+  color: var(--ink-3);
+  font-size: 0.92rem;
+}
+.setup-fee {
+  font-size: 0.85rem;
+  color: var(--ink-2);
+  margin: -0.5rem 0 0;
+}
+.seats {
+  font-size: 0.88rem;
+  color: var(--ink-2);
+  padding: 0.7rem 0.8rem;
+  background: var(--surface-2);
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.seats strong {
+  color: var(--ink);
+}
+.features {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+  font-size: 0.92rem;
+  color: var(--ink-2);
+}
+.features li {
+  display: grid;
+  grid-template-columns: 1.1rem 1fr;
+  gap: 0.5rem;
+  align-items: start;
+}
+.features svg {
+  margin-top: 0.35rem;
+  color: var(--good);
+  flex: none;
+}
+.tier .btn {
+  width: 100%;
+  margin-top: auto;
+}
+
+/* ---- Add-ons --------------------------------------------------------- */
+.addons {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.addon {
+  background: var(--surface);
+  padding: 1.1rem 1.2rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.addon-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.addon-note {
+  color: var(--ink-3);
+  font-size: 0.85rem;
+  width: 100%;
+}
+.addon-price {
+  font-family: var(--fs-mono);
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.note {
+  margin-top: 1.5rem;
+  font-size: 0.85rem;
+  color: var(--ink-3);
+  max-width: 62ch;
+}
+
+/* ---- Footer ---------------------------------------------------------- */
+.site-footer {
+  border-top: 1px solid var(--rule);
+  background: var(--surface);
+  padding: 2rem 0;
+  color: var(--ink-3);
+  font-size: 0.85rem;
+}
+.site-footer .shell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* ---- Scale UP from here. No max-width queries anywhere in this file. -- */
+@media (min-width: 640px) {
+  .props {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .addons {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 900px) {
+  .hero {
+    padding: 5rem 0 5.5rem;
+  }
+  .section {
+    padding: 4.5rem 0;
+  }
+  .tiers {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+  }
+  .prop {
+    padding: 2rem 1.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
