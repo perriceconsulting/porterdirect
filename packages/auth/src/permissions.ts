@@ -16,6 +16,10 @@
  */
 import type { TenantRole } from "@porterdirect/db";
 
+// Re-exported so callers reason about roles through this package rather than
+// reaching into the schema for a type the policy owns the meaning of.
+export type { TenantRole };
+
 /**
  * Permissions are named for the DOMAIN action, not the HTTP verb or table, so a reader
  * who knows the business can audit this list without knowing the schema.
@@ -135,4 +139,49 @@ export function authorize(
   if (!can(membership.role, permission)) {
     throw new AuthorizationError(permission, membership.role);
   }
+}
+
+/**
+ * Which roles may this role hand out?
+ *
+ * Separate from `can(role, "members:manage")` on purpose. "May invite someone" and "may
+ * invite someone AS AN OWNER" are different questions, and collapsing them is how
+ * privilege escalation happens: an ops user who can invite would otherwise be able to
+ * invite themselves a second account as owner, or promote a colleague past themselves.
+ *
+ * The rule is simple and deliberately strict — you cannot grant a role you do not hold:
+ *   owner      -> any role, including another owner
+ *   ops        -> dispatcher, driver (never owner, never another ops)
+ *   dispatcher -> nothing
+ *   driver     -> nothing
+ */
+const INVITABLE: Readonly<Record<TenantRole, readonly TenantRole[]>> = {
+  owner: ["owner", "ops", "dispatcher", "driver"],
+  ops: ["dispatcher", "driver"],
+  dispatcher: [],
+  driver: [],
+};
+
+export function canInviteRole(inviter: TenantRole, target: TenantRole): boolean {
+  return INVITABLE[inviter].includes(target);
+}
+
+/** Roles this role may offer, for building the invite form's options. */
+export function invitableRoles(inviter: TenantRole): readonly TenantRole[] {
+  return INVITABLE[inviter];
+}
+
+/** Raised when someone tries to grant a role they may not grant. */
+export class RoleEscalationError extends Error {
+  constructor(
+    readonly inviter: TenantRole,
+    readonly target: TenantRole,
+  ) {
+    super(`A "${inviter}" cannot invite someone as "${target}".`);
+    this.name = "RoleEscalationError";
+  }
+}
+
+export function assertCanInviteRole(inviter: TenantRole, target: TenantRole): void {
+  if (!canInviteRole(inviter, target)) throw new RoleEscalationError(inviter, target);
 }

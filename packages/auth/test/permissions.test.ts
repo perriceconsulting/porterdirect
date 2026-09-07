@@ -3,8 +3,12 @@ import { tenantRole } from "@porterdirect/db";
 import type { TenantRole } from "@porterdirect/db";
 import {
   AuthorizationError,
+  RoleEscalationError,
+  assertCanInviteRole,
   authorize,
   can,
+  canInviteRole,
+  invitableRoles,
   permissionsFor,
   type Membership,
   type Permission,
@@ -149,5 +153,56 @@ describe("console access via a request-supplied tenant id", () => {
     expect(() => authorize(member("owner", "tenant-a"), "tenant-b", "members:read")).toThrow(
       /Cross-tenant request refused/,
     );
+  });
+});
+
+/**
+ * Privilege escalation is the risk an invite system carries. "May invite" and "may
+ * invite AS OWNER" are different questions; collapsing them is the bug.
+ */
+describe("who may grant which role", () => {
+  it("lets an owner grant any role, including another owner", () => {
+    for (const target of ROLES) {
+      expect(canInviteRole("owner", target), `owner -> ${target}`).toBe(true);
+    }
+  });
+
+  it("lets ops staff the fleet but never create an owner", () => {
+    expect(canInviteRole("ops", "dispatcher")).toBe(true);
+    expect(canInviteRole("ops", "driver")).toBe(true);
+    expect(canInviteRole("ops", "owner")).toBe(false);
+  });
+
+  it("does not let ops clone their own role", () => {
+    // Otherwise "ops" is effectively unbounded: one ops user becomes many.
+    expect(canInviteRole("ops", "ops")).toBe(false);
+  });
+
+  it.each(["dispatcher", "driver"] as const)("gives %s no power to invite at all", (role) => {
+    for (const target of ROLES) {
+      expect(canInviteRole(role, target), `${role} -> ${target}`).toBe(false);
+    }
+  });
+
+  it("never lets a role grant something above itself", () => {
+    // The general property, asserted rather than left to the table being read carefully.
+    const rank: Record<string, number> = { driver: 0, dispatcher: 1, ops: 2, owner: 3 };
+    for (const inviter of ROLES) {
+      for (const target of ROLES) {
+        if (canInviteRole(inviter, target)) {
+          expect(rank[target]!, `${inviter} granted ${target}`).toBeLessThanOrEqual(rank[inviter]!);
+        }
+      }
+    }
+  });
+
+  it("offers exactly the grantable roles for a form", () => {
+    expect(invitableRoles("ops")).toEqual(["dispatcher", "driver"]);
+    expect(invitableRoles("driver")).toEqual([]);
+  });
+
+  it("throws with both roles named", () => {
+    expect(() => assertCanInviteRole("ops", "owner")).toThrow(RoleEscalationError);
+    expect(() => assertCanInviteRole("owner", "driver")).not.toThrow();
   });
 });

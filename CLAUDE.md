@@ -48,6 +48,16 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
 - **Webhook double-apply.** Stripe re-delivers events; without idempotency a retry applies
   twice. `processed_webhook_events` + `handleStripeEvent` make it exactly-once.
 - **Money as float.** All amounts are integer cents. Never introduce floating-point money.
+- **An invite link is a bearer credential.** Whoever holds it joins the tenant. Store
+  the token HASHED (a database dump of raw tokens is a set of working keys), compare it
+  in constant time (a plain compare leaks how many characters matched), bind it to the
+  invited EMAIL (a forwarded link must not work for whoever received it), and make it
+  single-use and time-bound. Generate it with crypto randomness, not a uuid — a uuid is
+  an identifier, and identifiers end up in logs and referrers.
+- **"May invite" and "may invite AS OWNER" are different questions.** Collapsing them
+  lets an ops user invite themselves a second account as owner. `canInviteRole` is
+  separate from `can(role, "members:manage")`, and no role may grant a role above its
+  own — asserted as a general property, not left to the table being read carefully.
 - **A cleanup pattern is a destructive query.** A sweep of `email LIKE '%.test'` was run
   to remove test fixtures and it matched `workers@demo.test` — a REAL account, whose
   deletion cascaded away its membership and orphaned a tenant with a live paid
@@ -531,3 +541,26 @@ live-map reactivity.
     states unreopenable, a shopping job unable to bypass the till, cross-tenant reads
     returning null, and the full audit trail recorded.
   - Ratchets: tests = **235** + 6 PHAST + 25 e2e; client components = 1; lint = 0.
+
+- **2026-09-07 — Team invitations: the fleet becomes more than one person.**
+  - `assigned` finally means something: an owner or ops user can invite dispatchers and
+    drivers, and a driver's board shows only their own assigned work.
+  - **Privilege escalation is the risk an invite system carries**, so the role-granting
+    rule is separate from "may manage members" and strictly hierarchical: an owner may
+    grant anything, ops may grant dispatcher or driver but never owner and **never
+    another ops** (otherwise one ops user becomes many), and dispatchers and drivers may
+    grant nothing. Tested as a general property — no role may grant above its own rank.
+  - The token is 32 bytes of crypto randomness, **stored as SHA-256**, compared in
+    constant time, bound to the invited email, single-use and expiring in seven days.
+    Each of those closes a specific hole: a database dump of raw tokens is a set of
+    working keys; a plain string compare leaks matched prefixes; an unbound link works
+    for whoever it was forwarded to; an unexpiring link is a standing key in an inbox.
+  - Acceptance CLAIMS the invite first, scoped by "still unaccepted", so two simultaneous
+    accepts cannot both create a membership — the atomic-claim shape again.
+  - The accept page says as little as possible before sign-in, and gives ONE message for
+    "no such token", "expired" and "already used". Distinguishing them would let someone
+    probe which tokens exist.
+  - Caught while writing it: a withdraw button given `min-height: 36px` because it is a
+    "secondary action". Secondary is not an exemption from the 44px minimum — a smaller
+    target misfires identically, and this one withdraws an invitation.
+  - Ratchets: tests = **243** + 6 PHAST + 25 e2e; client components = 1; lint = 0.

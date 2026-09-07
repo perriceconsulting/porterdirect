@@ -16,7 +16,10 @@ import { can } from "@porterdirect/auth";
 import { SiteHeader } from "../../_components/site-header";
 import { signOutAction } from "../../actions";
 import { openBillingPortalAction } from "./actions";
+import { invitableRoles } from "@porterdirect/auth";
 import { listTeam, requireConsole } from "../../../lib/console";
+import { listPendingInvitations } from "../../../lib/invitations";
+import { inviteMemberAction, revokeInvitationAction } from "./team-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -36,22 +39,28 @@ export async function generateMetadata({
 
 export default async function Console({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantId: string }>;
+  searchParams: Promise<{ error?: string; invited?: string }>;
 }) {
   const { tenantId } = await params;
+  const notice = await searchParams;
   // The lowest permission every role holds — this page is the console's front door, and
   // what it SHOWS is gated per-section below rather than by locking the whole page.
   const ctx = await requireConsole(tenantId, "orders:read:assigned");
   const { tenant, membership, subscription, db, userId } = ctx;
 
   const team = can(membership.role, "members:read") ? await listTeam(db, tenantId, userId) : [];
+  const mayManage = can(membership.role, "members:manage");
+  const pending = mayManage ? await listPendingInvitations(db, tenantId) : [];
+  const grantable = invitableRoles(membership.role);
   const plan = subscription ? getPlan(subscription.planId) : null;
   const monthly =
     subscription && plan ? computeMonthlyTotalCents(plan.id, subscription.seatCount) : null;
 
   const domainConnected = Boolean(tenant.host);
-  const teamInvited = team.length > 1;
+  const teamInvited = team.length > 1 || pending.length > 0;
   const billingActive = subscription ? isEntitled(subscription.status) : false;
 
   return (
@@ -78,6 +87,17 @@ export default async function Console({
               {subscription?.status ?? "no subscription"}
             </span>
           </div>
+
+          {notice.error ? (
+            <p className="error" role="alert">
+              {notice.error}
+            </p>
+          ) : null}
+          {notice.invited ? (
+            <p className="notice" role="status">
+              Invitation sent to {notice.invited}.
+            </p>
+          ) : null}
 
           {/* Setup checklist. Real state, not decoration — each row reflects a query. */}
           <section className="panel">
@@ -123,8 +143,8 @@ export default async function Console({
                   <strong>Invite your dispatchers</strong>
                   <p>
                     {teamInvited
-                      ? `${team.length} people on this account.`
-                      : "You are the only person on this account. Invites are not built yet."}
+                      ? `${team.length} on the team${pending.length ? `, ${pending.length} invite${pending.length === 1 ? "" : "s"} pending` : ""}.`
+                      : "You are the only person on this account. Invite your dispatchers and drivers below."}
                   </p>
                 </div>
               </li>
@@ -195,10 +215,59 @@ export default async function Console({
                       <span className="pill">{m.role}</span>
                     </li>
                   ))}
+                  {pending.map((inv) => (
+                    <li key={inv.id}>
+                      <span className="k">
+                        {inv.email}
+                        <br />
+                        <span className="hint">
+                          invited · expires {inv.expiresAt.toISOString().slice(0, 10)}
+                        </span>
+                      </span>
+                      <span className="invite-row">
+                        <span className="pill warn">{inv.role}</span>
+                        <form action={revokeInvitationAction}>
+                          <input type="hidden" name="tenantId" value={tenantId} />
+                          <input type="hidden" name="invitationId" value={inv.id} />
+                          <button className="btn btn-quiet btn-small" type="submit">
+                            Withdraw
+                          </button>
+                        </form>
+                      </span>
+                    </li>
+                  ))}
                 </ul>
               ) : (
                 <p className="sub">Your role does not include seeing the roster.</p>
               )}
+
+              {mayManage && grantable.length > 0 ? (
+                <form action={inviteMemberAction} style={{ marginTop: "1.1rem" }}>
+                  <input type="hidden" name="tenantId" value={tenantId} />
+                  <div className="field">
+                    <label htmlFor="inviteEmail">Invite by email</label>
+                    <input id="inviteEmail" name="email" type="email" required />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="inviteRole">Role</label>
+                    <select id="inviteRole" name="role" defaultValue={grantable[grantable.length - 1]}>
+                      {grantable.map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="hint">
+                      A driver sees only their own assigned jobs — never the fleet.
+                    </span>
+                  </div>
+                  <div className="form-actions">
+                    <button className="btn btn-quiet" type="submit">
+                      Send invitation
+                    </button>
+                  </div>
+                </form>
+              ) : null}
             </section>
           </div>
 

@@ -886,3 +886,18 @@ th.num {
     gap: 1rem;
   }
 }
+
+.invite-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+/* Visually lighter, but still a full 44px target. "Secondary action" is not an
+   exemption from the tap-target minimum — a smaller hit area misfires exactly the same
+   way, and this one WITHDRAWS an invitation. */
+.btn-small {
+  min-height: var(--tap);
+  padding: 0 0.8rem;
+  font-size: 0.82rem;
+}

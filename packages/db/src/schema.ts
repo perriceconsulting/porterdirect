@@ -313,3 +313,46 @@ export const orderEvents = pgTable(
 export type Order = typeof orders.$inferSelect;
 export type NewOrder = typeof orders.$inferInsert;
 export type OrderEvent = typeof orderEvents.$inferSelect;
+
+/**
+ * Pending invitations into a tenant.
+ *
+ * THE TOKEN IS STORED AS A HASH, never in the clear. An invite token is a bearer
+ * credential — whoever holds it joins the tenant — so a database dump containing raw
+ * tokens is a set of working keys to every outstanding invitation. Hashing means a leak
+ * of this table grants nothing, exactly as with passwords.
+ *
+ * Single-use and time-bound: `acceptedAt` closes it, `expiresAt` ages it out. An invite
+ * that stays valid forever is a standing key sitting in someone's inbox.
+ */
+export const tenantInvitations = pgTable(
+  "tenant_invitations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    /** Bound to an address: accepting requires signing in as the person invited. */
+    email: text("email").notNull(),
+    role: tenantRole("role").notNull(),
+    /** SHA-256 of the token. The token itself exists only in the emailed link. */
+    tokenHash: text("token_hash").notNull(),
+    invitedByUserId: text("invited_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // Looked up by hash on accept — the only index that path needs.
+    tokenIdx: uniqueIndex("tenant_invitations_token_idx").on(t.tokenHash),
+    tenantIdx: index("tenant_invitations_tenant_idx").on(t.tenantId),
+    // One OPEN invite per (tenant, email) is enforced in the domain layer rather than
+    // here, because a unique index would also block re-inviting after a decline.
+    emailIdx: index("tenant_invitations_email_idx").on(t.tenantId, t.email),
+  }),
+);
+
+export type TenantInvitation = typeof tenantInvitations.$inferSelect;
+export type NewTenantInvitation = typeof tenantInvitations.$inferInsert;
