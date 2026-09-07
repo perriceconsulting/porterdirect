@@ -1,0 +1,131 @@
+import { describe, it, expect } from "vitest";
+import { tenantRole } from "@porterdirect/db";
+import type { TenantRole } from "@porterdirect/db";
+import {
+  AuthorizationError,
+  authorize,
+  can,
+  permissionsFor,
+  type Membership,
+  type Permission,
+} from "../src/permissions.js";
+
+const ROLES = tenantRole.enumValues;
+const member = (role: TenantRole, tenantId = "tenant-a"): Membership => ({
+  tenantId,
+  userId: "user-1",
+  role,
+});
+
+describe("authorization matrix", () => {
+  it("covers every role the database enum allows", () => {
+    // If a role is added to the schema without a grant list, this fails rather than
+    // letting the new role fall through to an undefined lookup.
+    for (const role of ROLES) {
+      expect(permissionsFor(role), `no grants declared for "${role}"`).toBeDefined();
+      expect(Array.isArray(permissionsFor(role))).toBe(true);
+    }
+  });
+
+  it("grants no role a permission twice", () => {
+    for (const role of ROLES) {
+      const perms = permissionsFor(role);
+      expect(new Set(perms).size, `duplicate grant in "${role}"`).toBe(perms.length);
+    }
+  });
+
+  /**
+   * The privacy property. Driver location is scoped to an order, never to a person —
+   * a driver who can read the fleet or other drivers' orders breaks that scoping, and
+   * off-shift visibility is a legal liability, not a bug.
+   */
+  describe("a driver is confined to their own assigned work", () => {
+    const forbidden: Permission[] = [
+      "fleet:view",
+      "orders:read:all",
+      "orders:assign",
+      "orders:create",
+      "drivers:manage",
+      "members:manage",
+      "members:read",
+      "billing:manage",
+      "tenant:settings",
+    ];
+    for (const permission of forbidden) {
+      it(`denies driver "${permission}"`, () => {
+        expect(can("driver", permission)).toBe(false);
+      });
+    }
+    it("allows only reading and updating their assigned orders", () => {
+      expect(permissionsFor("driver")).toEqual(["orders:read:assigned", "orders:update:assigned"]);
+    });
+  });
+
+  describe("money and membership are owner-only", () => {
+    it("grants billing:manage to owner alone", () => {
+      const holders = ROLES.filter((r) => can(r, "billing:manage"));
+      expect(holders).toEqual(["owner"]);
+    });
+    it("grants members:manage to owner alone", () => {
+      const holders = ROLES.filter((r) => can(r, "members:manage"));
+      expect(holders).toEqual(["owner"]);
+    });
+  });
+
+  it("lets dispatchers move work but not manage the roster or settings", () => {
+    expect(can("dispatcher", "orders:assign")).toBe(true);
+    expect(can("dispatcher", "fleet:view")).toBe(true);
+    expect(can("dispatcher", "drivers:manage")).toBe(false);
+    expect(can("dispatcher", "tenant:settings")).toBe(false);
+  });
+
+  it("lets ops run operations but never touch billing", () => {
+    expect(can("ops", "drivers:manage")).toBe(true);
+    expect(can("ops", "tenant:settings")).toBe(true);
+    expect(can("ops", "billing:manage")).toBe(false);
+  });
+});
+
+describe("authorize()", () => {
+  it("permits an action the role holds within its own tenant", () => {
+    expect(() => authorize(member("ops"), "tenant-a", "orders:assign")).not.toThrow();
+  });
+
+  it("refuses an action the role does not hold", () => {
+    expect(() => authorize(member("driver"), "tenant-a", "fleet:view")).toThrow(AuthorizationError);
+  });
+
+  it("refuses with no membership at all", () => {
+    expect(() => authorize(null, "tenant-a", "orders:read:assigned")).toThrow(AuthorizationError);
+  });
+
+  /**
+   * The isolation property, and the reason the tenant check precedes the role check:
+   * an owner is maximally privileged, so if privilege were evaluated first it would
+   * mask the fact that this session belongs to a different tenant entirely.
+   */
+  it("refuses a cross-tenant request even from an owner", () => {
+    expect(() => authorize(member("owner", "tenant-a"), "tenant-b", "orders:read:all")).toThrow(
+      /Cross-tenant request refused/,
+    );
+  });
+
+  it("names the tenants in a cross-tenant refusal without leaking the permission check", () => {
+    try {
+      authorize(member("owner", "tenant-a"), "tenant-b", "billing:manage");
+      throw new Error("should have thrown");
+    } catch (err) {
+      expect((err as Error).message).toContain("tenant-a");
+      expect((err as Error).message).toContain("tenant-b");
+      expect(err).not.toBeInstanceOf(AuthorizationError);
+    }
+  });
+
+  it("refuses cross-tenant for every role, not just privileged ones", () => {
+    for (const role of ROLES) {
+      expect(() => authorize(member(role, "tenant-a"), "tenant-b", "orders:read:assigned")).toThrow(
+        /Cross-tenant request refused/,
+      );
+    }
+  });
+});

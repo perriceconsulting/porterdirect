@@ -1,0 +1,13 @@
+{
+  "name": "@porterdirect/auth",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Identity, tenant membership and the authorization matrix.",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc -b" },
+  "dependencies": {
+    "@porterdirect/db": "*",
+    "better-auth": "^1.7.3"
+  }
+}

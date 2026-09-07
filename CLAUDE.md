@@ -26,6 +26,8 @@ agencies) who run the physical work under their own brand + domain.
 | DB client / connection | [packages/db/src/client.ts](packages/db/src/client.ts) | neon-http driver; no transactions, so the webhook path uses single atomic statements |
 | DB migrations | [packages/db/drizzle/](packages/db/drizzle/) | GENERATED from `schema.ts` via `npm run db:generate` — never hand-write DDL |
 | Env file reading | [scripts/lib/load-env.sh](scripts/lib/load-env.sh) | The only place a secrets file is read; parses as data, never sourced |
+| Authorization policy | [packages/auth/src/permissions.ts](packages/auth/src/permissions.ts) | The role→permission matrix; pure, exhaustive, no inheritance chain |
+| Host → tenant classification | [packages/auth/src/tenant-host.ts](packages/auth/src/tenant-host.ts) | One normalisation, so every surface agrees what "same host" means |
 
 Local copies that must **reconcile back** (DOSI-S caveat): the `subscriptions` DB row
 mirrors the Stripe Subscription (reconciled by `webhook.ts`); `STRIPE_PRICE_*` env vars
@@ -241,3 +243,32 @@ live-map reactivity.
   - `npm run verify` runs the whole chain locally.
   - Ratchets: tests = **64**; lint errors = **0** across **26** linted files (previously
     "not configured" — this is the ratchet finally set); client components = 0.
+
+- **2026-09-07 — Identity, tenant membership, and the authorization matrix.**
+  - Chose **Better Auth** for identity. Deliberately did NOT use its organization plugin:
+    that would add an `organization` table sitting beside the canonical `tenants`, giving
+    two answers to "what is a tenant". Better Auth owns identity only; membership is ours.
+  - Schema: `user`, `session`, `account`, `verification` (Better Auth's shape) plus
+    **`tenant_members`** — a real foreign key on both sides, unique on (tenant, user) so
+    one person cannot hold two roles in one tenant and leave "what may they do" undefined.
+    Identity is global and membership is scoped, because a contractor may drive for two
+    firms and an agency operator may run two brands. `role` is a Postgres ENUM, not text:
+    it is the column an authorization check reads, so a typo must fail on write.
+  - **`packages/auth`** carries the policy as pure functions. The matrix is written out per
+    role rather than derived by inheritance — "ops = dispatcher + extras" means widening a
+    parent silently widens every child, which is how a driver quietly gains fleet
+    visibility. Two properties are asserted directly: a **driver** holds only
+    `orders:read:assigned` and `orders:update:assigned` (no fleet, no roster, no other
+    drivers' orders — the location-privacy promise is enforceable only if this holds), and
+    **billing/membership are owner-only**.
+  - `authorize()` checks the TENANT before the ROLE. An owner is maximally privileged, so
+    evaluating privilege first would mask a session belonging to a different tenant
+    entirely. Cross-tenant refusal is tested for every role, not just the weak ones.
+  - Host classification refuses to guess: an unknown host resolves to nothing and 404s.
+    There is deliberately no default tenant, because a fallback would serve one licensee's
+    data on another licensee's domain. Nested subdomains (`evil.app.porterdirect.com`) are
+    tenant hosts, never platform surfaces — only a first-level reserved subdomain counts.
+  - Ratchets: tests = **112** (was 64); lint errors = 0; client components = 0.
+  - Left alone (with reason): the Better Auth runtime instance and its route handler are
+    not wired yet. The policy and the schema it reads are the parts worth getting right
+    first, and they are testable without a server.
