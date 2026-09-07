@@ -12,6 +12,11 @@
  */
 
 :root {
+  /* Native controls — the select popup above all — are painted by the BROWSER, not by
+     this stylesheet. Without color-scheme it renders an OS-default light popup on a
+     dark page, which is what made the plan dropdown unreadable. */
+  color-scheme: light;
+
   --paper: #eef1f4;
   --surface: #ffffff;
   --surface-2: #f7f9fa;
@@ -36,6 +41,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
+    color-scheme: dark;
+
     --paper: #10151a;
     --surface: #171d24;
     --surface-2: #1d242b;
@@ -423,5 +430,167 @@ h2 {
   * {
     transition: none !important;
     animation: none !important;
+  }
+}
+
+/* ---- Forms ------------------------------------------------------------
+ * Inputs are 44px tall and 16px text. The font size is not cosmetic: below 16px,
+ * mobile Safari zooms the whole page on focus and the user loses their place.
+ */
+.auth-wrap {
+  /* dvh, not vh: 100vh excludes mobile browser chrome and clips the bottom. */
+  min-height: calc(100dvh - 60px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 2rem 1.25rem 4rem;
+}
+.auth-card {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 1.75rem 1.4rem;
+  width: 100%;
+  max-width: 30rem;
+}
+.auth-card h1 {
+  font-size: 1.6rem;
+  margin: 0 0 0.4rem;
+  max-width: none;
+}
+.auth-card .sub {
+  color: var(--ink-2);
+  margin: 0 0 1.5rem;
+  font-size: 0.95rem;
+}
+.field {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+.field label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.field .hint {
+  font-size: 0.8rem;
+  color: var(--ink-3);
+}
+.field input,
+.field select {
+  min-height: var(--tap);
+  /* 16px is not cosmetic: below it, mobile Safari zooms the page on focus. */
+  font-size: 16px;
+  font-family: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0 0.75rem;
+  width: 100%;
+  /* A select cannot ellipsis its own label, so it must simply have room. */
+  min-width: 0;
+}
+.field select {
+  /* The browser draws its chevron inside the padding box; reserve space for it or the
+     longest option runs underneath. */
+  padding-right: 2rem;
+  text-overflow: ellipsis;
+}
+.field input:focus-visible,
+.field select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+.form-actions {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.4rem;
+}
+.form-actions .btn {
+  width: 100%;
+}
+.alt {
+  margin: 1.25rem 0 0;
+  font-size: 0.9rem;
+  color: var(--ink-2);
+  text-align: center;
+}
+.alt a {
+  color: var(--accent);
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.25rem;
+}
+.error {
+  background: var(--accent-bg);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 0.7rem 0.85rem;
+  margin: 0 0 1.25rem;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+.row-2 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0 1rem;
+}
+.status-list {
+  list-style: none;
+  margin: 1.25rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.status-list li {
+  background: var(--surface);
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  justify-content: space-between;
+  font-size: 0.92rem;
+}
+.status-list .k {
+  color: var(--ink-2);
+}
+.status-list .v {
+  font-family: var(--fs-mono);
+  font-variant-numeric: tabular-nums;
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--fs-mono);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.45rem;
+  border-radius: 2px;
+  background: var(--good-bg);
+  color: var(--good);
+}
+.pill.warn {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+@media (min-width: 560px) {
+  /* Not 1fr 1fr: "White-Label Agency — $999/mo" needs roughly twice the room a seat
+     count does, and an even split clips the very text that drives the choice. */
+  .row-2 {
+    grid-template-columns: 2fr 1fr;
+  }
+  .auth-card {
+    padding: 2.25rem 2rem;
   }
 }

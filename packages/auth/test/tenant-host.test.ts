@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { classifyHost, normalizeHost, type HostConfig } from "../src/tenant-host.js";
+import {
+  assignableTenantHost,
+  classifyHost,
+  normalizeHost,
+  type HostConfig,
+} from "../src/tenant-host.js";
 
 const CONFIG: HostConfig = {
   apex: "porterdirect.com",
@@ -84,5 +89,71 @@ describe("classifyHost", () => {
     // to — a fallback would serve one licensee's data on another licensee's domain.
     expect(classifyHost("", CONFIG)).toBeNull();
     expect(classifyHost(null, CONFIG)).toBeNull();
+  });
+});
+
+describe("assignableTenantHost", () => {
+  it("accepts a normal white-label CNAME", () => {
+    expect(assignableTenantHost("dispatch.acme.com", CONFIG)).toEqual({
+      ok: true,
+      host: "dispatch.acme.com",
+    });
+  });
+
+  it("normalizes before accepting, so one host cannot be claimed twice", () => {
+    // "WWW.Acme.COM:443" and "acme.com" must not become two tenant rows.
+    expect(assignableTenantHost("WWW.Acme.COM:443", CONFIG)).toEqual({ ok: true, host: "acme.com" });
+  });
+
+  /**
+   * The signup-abuse case: nothing self-service may claim a host we would classify as
+   * one of our own surfaces, or a tenant row would shadow it.
+   */
+  it.each(["app", "fleet", "api", "admin", "status", "www"])(
+    "refuses to assign reserved subdomain %j",
+    (sub) => {
+      const result = assignableTenantHost(`${sub}.porterdirect.com`, CONFIG);
+      expect(result.ok).toBe(false);
+    },
+  );
+
+  it("refuses our own apex", () => {
+    expect(assignableTenantHost("porterdirect.com", CONFIG)).toEqual({
+      ok: false,
+      reason: "our-apex",
+    });
+  });
+
+  it.each([
+    ["", "empty"],
+    ["   ", "empty"],
+    ["localhost", "malformed"],
+    ["-bad.example.com", "malformed"],
+    ["bad-.example.com", "malformed"],
+    ["has space.example.com", "malformed"],
+    ["under_score.example.com", "malformed"],
+  ])("refuses %j as %s", (input, reason) => {
+    expect(assignableTenantHost(input, CONFIG)).toEqual({ ok: false, reason });
+  });
+
+  it("refuses an over-long hostname", () => {
+    const long = `${"a".repeat(60)}.${"b".repeat(60)}.${"c".repeat(60)}.${"d".repeat(60)}.example.com`;
+    expect(assignableTenantHost(long, CONFIG)).toEqual({ ok: false, reason: "too-long" });
+  });
+
+  it("agrees with classifyHost: nothing assignable is ever a platform surface", () => {
+    const candidates = [
+      "dispatch.acme.com",
+      "app.porterdirect.com",
+      "porterdirect.com",
+      "acmecouriers.porterdirect.com",
+      "evil.app.porterdirect.com",
+    ];
+    for (const host of candidates) {
+      const assignment = assignableTenantHost(host, CONFIG);
+      if (assignment.ok) {
+        expect(classifyHost(assignment.host, CONFIG)?.kind, `${host} was assignable`).toBe("tenant");
+      }
+    }
   });
 });

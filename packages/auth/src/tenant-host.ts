@@ -84,3 +84,49 @@ export function classifyHost(
 
   return { kind: "tenant", host };
 }
+
+export type HostRejection =
+  | "empty"
+  | "malformed"
+  | "reserved"
+  | "our-apex"
+  | "too-long";
+
+export type HostAssignment =
+  | { readonly ok: true; readonly host: string }
+  | { readonly ok: false; readonly reason: HostRejection };
+
+/** A hostname label: letters, digits, hyphens; not starting or ending with a hyphen. */
+const LABEL = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/**
+ * May a tenant claim this host?
+ *
+ * This is the check standing between self-service signup and someone registering
+ * `app.porterdirect.com` as their own tenant host. `classifyHost` decides what an
+ * INCOMING request is; this decides what a tenant is ALLOWED to register, and the two
+ * must agree — a host we would classify as a platform surface can never be assignable,
+ * or a tenant row would shadow one of our own surfaces.
+ */
+export function assignableTenantHost(
+  rawHost: string | null | undefined,
+  config: HostConfig = DEFAULT_HOST_CONFIG,
+): HostAssignment {
+  const host = normalizeHost(rawHost);
+  if (!host) return { ok: false, reason: "empty" };
+  if (host.length > 253) return { ok: false, reason: "too-long" };
+
+  const labels = host.split(".");
+  if (labels.length < 2) return { ok: false, reason: "malformed" };
+  if (!labels.every((l) => LABEL.test(l))) return { ok: false, reason: "malformed" };
+
+  // Defer to classifyHost rather than re-deriving the rule: two implementations of
+  // "is this ours" is how a reserved host eventually becomes assignable on one path.
+  const classified = classifyHost(host, config);
+  if (!classified) return { ok: false, reason: "malformed" };
+  if (classified.kind === "platform") {
+    return { ok: false, reason: host === config.apex.toLowerCase() ? "our-apex" : "reserved" };
+  }
+
+  return { ok: true, host };
+}

@@ -46,6 +46,15 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
 - **Webhook double-apply.** Stripe re-delivers events; without idempotency a retry applies
   twice. `processed_webhook_events` + `handleStripeEvent` make it exactly-once.
 - **Money as float.** All amounts are integer cents. Never introduce floating-point money.
+- **A checkout with tax calculation off collects no tax at all.** Stripe rejects
+  `automatic_tax` until the account has a head office address and registrations, so it
+  cannot be hardcoded on — but defaulting it off forever means charging real customers
+  nothing in sales tax or VAT, which is a compliance failure rather than a smaller
+  feature. `STRIPE_AUTOMATIC_TAX` is opt-in AND the app hard-refuses to run a live key
+  while it is off.
+- **Native form controls ignore your CSS theme.** A `<select>` popup is painted by the
+  browser, so on a dark page without `color-scheme` it renders OS-default light and is
+  unreadable. Declare `color-scheme` on `:root` for both themes.
 - **Stripe relocates fields between API versions.** `current_period_end` moved off the
   Subscription onto each subscription ITEM; on 2026-08-26.dahlia the subscription-level
   field is simply absent. Reading the old place yields `undefined`, and
@@ -342,3 +351,34 @@ live-map reactivity.
     measured loosely is worse than none, because it reports confidently.
   - Ratchets: tests = **133** (was 121) + 6 PHAST; client components = **0**; lint = 0;
     min-width:max-width media queries = **2:0**.
+
+- **2026-09-07 — The funnel: signup → tenant → Stripe Checkout.**
+  - Sign-in, sign-up and post-checkout pages, all **server components** behind plain
+    `<form>` posts to server actions. Errors travel back as an enumerated `?error=` code
+    mapped to copy on the page, so the flows work with JavaScript disabled and no raw
+    error message ever reaches the URL bar, browser history or a referrer header.
+    Sign-in returns ONE message for both "no such account" and "wrong password" — telling
+    them apart is a free account-enumeration oracle.
+  - **Provisioning order is load-bearing** and documented as such: tenant → owner
+    membership → Stripe customer (id written back) → checkout. The subscription webhook
+    resolves to a tenant *through* `stripe_customer_id`, so starting checkout before that
+    id exists means the first `customer.subscription.created` arrives for a customer we
+    have never heard of and retries until it gives up. neon-http has no transactions, so
+    the membership step rolls the tenant back on failure rather than pretending atomicity.
+  - `assignableTenantHost` is the check between self-service signup and someone
+    registering `app.porterdirect.com` as their own tenant host. It defers to
+    `classifyHost` rather than re-deriving the rule — two implementations of "is this
+    ours" is how a reserved host eventually becomes assignable on one path.
+  - Verified end to end against live Stripe and Postgres: sign-up 200, tenant created,
+    owner membership written, customer id stored **before** checkout, session created at
+    checkout.stripe.com, reserved host refused, duplicate host refused, all cleaned up.
+  - `/welcome` reads the DATABASE, not the checkout redirect. Stripe returns the browser
+    before the webhook necessarily lands, so a page reporting "active" from the URL would
+    assert something it had not verified. It shows "Confirming" until the row exists.
+  - Two UI defects the user caught that no test would have: the plan `<select>` popup
+    rendered OS-default light on the dark page (no `color-scheme` declared), and the
+    longest option clipped under the chevron in a `1fr 1fr` row. Fixed by declaring
+    `color-scheme` for both themes and giving the plan its own full-width row — the
+    arithmetic showed even `2fr` left it ~1rem short, and guessing at widths is how
+    clipping returns.
+  - Ratchets: tests = **151** (was 133) + 6 PHAST; client components = **0**; lint = 0.

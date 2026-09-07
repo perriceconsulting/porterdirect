@@ -12,6 +12,7 @@
  * competing notion of "organization" appearing beside the canonical `tenants`.
  */
 import { betterAuth } from "better-auth";
+import type { BetterAuthPlugin } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { accounts, sessions, users, verifications, type Db } from "@porterdirect/db";
 
@@ -23,6 +24,14 @@ export interface AuthConfig {
   readonly baseURL: string;
   /** Extra origins permitted to hold a session cookie — tenant CNAMEs, in practice. */
   readonly trustedOrigins?: readonly string[];
+  /**
+   * Framework plugins, injected by the wiring layer.
+   *
+   * This package stays framework-agnostic: the Next.js cookie bridge that lets a server
+   * action set a session cookie is a Next concern, so the app passes it in rather than
+   * this package importing next and becoming unusable from the driver app later.
+   */
+  readonly plugins?: readonly BetterAuthPlugin[];
 }
 
 export type Auth = ReturnType<typeof createAuth>;
@@ -54,6 +63,7 @@ export function createAuth(config: AuthConfig) {
     secret: config.secret,
     baseURL: config.baseURL,
     trustedOrigins: config.trustedOrigins ? [...config.trustedOrigins] : undefined,
+    plugins: config.plugins ? [...config.plugins] : undefined,
     emailAndPassword: {
       enabled: true,
       // Operators are invited into a tenant, not self-served into one. Sign-up exists

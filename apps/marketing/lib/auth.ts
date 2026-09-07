@@ -6,6 +6,7 @@
  * @porterdirect/auth so the policy stays in one testable place.
  */
 import { headers } from "next/headers";
+import { nextCookies } from "better-auth/next-js";
 import { createDbClient } from "@porterdirect/db";
 import {
   authorize,
@@ -36,6 +37,9 @@ export function getAuth(): Auth {
     db: createDbClient(process.env.DATABASE_URL),
     secret: process.env.BETTER_AUTH_SECRET ?? "",
     baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
+    // Lets a server action set the session cookie. Injected here rather than in the
+    // auth package so that package stays framework-agnostic for the driver app.
+    plugins: [nextCookies()],
   });
   g[authKey] = built;
   return built;
