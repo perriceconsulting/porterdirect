@@ -13,6 +13,7 @@ import {
   type OrderStatus,
   type OrderType,
 } from "@porterdirect/orders";
+import { parsePhone, type CountryCode } from "@porterdirect/contact";
 
 export interface CreateOrderInput {
   readonly tenantId: string;
@@ -21,6 +22,8 @@ export interface CreateOrderInput {
   readonly customerFirstName: string;
   readonly customerLastName: string;
   readonly customerPhone?: string;
+  /** The tenant's country, used to read a nationally-formatted number. */
+  readonly country: CountryCode;
   readonly pickupAddress: string;
   readonly dropoffAddress: string;
   readonly notes?: string;
@@ -72,6 +75,17 @@ export async function createOrder(db: Db, input: CreateOrderInput): Promise<Orde
     throw new OrderValidationError("Price must be a whole number of cents, zero or more.");
   }
 
+  let normalizedPhone: string | null = null;
+  if (input.customerPhone?.trim()) {
+    const parsed = parsePhone(input.customerPhone, input.country);
+    if (!parsed) {
+      throw new OrderValidationError(
+        "That phone number could not be read. Enter a number that can actually be dialled.",
+      );
+    }
+    normalizedPhone = parsed.e164;
+  }
+
   // Retry on the per-tenant unique index rather than pre-checking: a SELECT-then-INSERT
   // is the same check-then-act race the webhook ledger had, and the index already
   // answers the question atomically.
@@ -86,7 +100,10 @@ export async function createOrder(db: Db, input: CreateOrderInput): Promise<Orde
           status: "pending",
           customerFirstName: input.customerFirstName.trim(),
           customerLastName: input.customerLastName.trim(),
-          customerPhone: input.customerPhone?.trim() || null,
+          // Stored as E.164 so one customer is one number however it was typed.
+          // Refused rather than stored raw when unparseable — this is the field a
+          // driver dials.
+          customerPhone: normalizedPhone,
           pickupAddress: input.pickupAddress.trim(),
           dropoffAddress: input.dropoffAddress.trim(),
           notes: input.notes?.trim() || null,

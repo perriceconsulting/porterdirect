@@ -50,6 +50,13 @@
       "when": 1788790854800,
       "tag": "0006_nostalgic_doorman",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788793460867,
+      "tag": "0007_clean_leader",
+      "breakpoints": true
     }
   ]
 }

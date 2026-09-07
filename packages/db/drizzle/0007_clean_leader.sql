@@ -1,0 +1,1 @@
+ALTER TABLE "tenants" ADD COLUMN "default_country" text DEFAULT 'US' NOT NULL;

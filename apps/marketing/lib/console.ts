@@ -27,6 +27,8 @@ export interface ConsoleTenant {
   readonly name: string;
   readonly host: string | null;
   readonly stripeCustomerId: string | null;
+  /** ISO 3166-1 alpha-2. Decides how this operator's phone numbers read. */
+  readonly defaultCountry: string;
 }
 
 export interface ConsoleSubscription {
@@ -66,6 +68,7 @@ export async function listConsoleTenants(
         name: tenants.name,
         host: tenants.primaryHost,
         stripeCustomerId: tenants.stripeCustomerId,
+        defaultCountry: tenants.defaultCountry,
       })
       .from(tenants)
       .where(eq(tenants.id, m.tenantId))
@@ -101,6 +104,7 @@ export async function requireConsole(
       name: tenants.name,
       host: tenants.primaryHost,
       stripeCustomerId: tenants.stripeCustomerId,
+      defaultCountry: tenants.defaultCountry,
     })
     .from(tenants)
     .where(eq(tenants.id, tenantId))

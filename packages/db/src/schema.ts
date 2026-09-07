@@ -30,6 +30,12 @@ export const tenants = pgTable(
     name: text("name").notNull(),
     primaryHost: text("primary_host"), // e.g. dispatch.theircompany.com (white-label CNAME)
     stripeCustomerId: text("stripe_customer_id"), // mirror of the Stripe Customer for this tenant
+    /**
+     * ISO 3166-1 alpha-2. Decides how phone numbers are parsed and displayed for this
+     * operator. Taken from the TENANT rather than the browser: a dispatcher travelling,
+     * or a VPN, would otherwise silently change how their customers' numbers are read.
+     */
+    defaultCountry: text("default_country").notNull().default("US"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

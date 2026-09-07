@@ -8,6 +8,7 @@
 import { notFound } from "next/navigation";
 import { can } from "@porterdirect/auth";
 import { formatUsdCents } from "@porterdirect/billing";
+import { formatPhone, type CountryCode } from "@porterdirect/contact";
 import {
   STATUS_LABELS,
   TYPE_LABELS,
@@ -95,7 +96,9 @@ export default async function OrderDetail({
                 {order.customerPhone ? (
                   <li>
                     <span className="k">Phone</span>
-                    <span className="v">{order.customerPhone}</span>
+                    <span className="v">
+                      {formatPhone(order.customerPhone, tenant.defaultCountry as CountryCode)}
+                    </span>
                   </li>
                 ) : null}
                 <li>

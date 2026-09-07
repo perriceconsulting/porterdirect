@@ -12,6 +12,7 @@ import { revalidatePath } from "next/cache";
 import { isRedirectError } from "@porterdirect/auth";
 import { IllegalTransitionError, type OrderStatus, type OrderType } from "@porterdirect/orders";
 import { parseUsdToCents } from "@porterdirect/billing";
+import type { CountryCode } from "@porterdirect/contact";
 import { requireConsole } from "../../../../lib/console";
 import { OrderValidationError, createOrder, transitionOrder } from "../../../../lib/orders";
 
@@ -42,7 +43,7 @@ export async function createOrderAction(data: FormData): Promise<void> {
   const tenantId = field(data, "tenantId");
   if (!tenantId) redirect("/dashboard");
 
-  const { db, userId } = await requireConsole(tenantId, "orders:create");
+  const { db, userId, tenant } = await requireConsole(tenantId, "orders:create");
   const base = `/dashboard/${tenantId}/orders`;
 
   const type = field(data, "type") as OrderType;
@@ -70,6 +71,7 @@ export async function createOrderAction(data: FormData): Promise<void> {
       customerFirstName: field(data, "customerFirstName"),
       customerLastName: field(data, "customerLastName"),
       customerPhone: field(data, "customerPhone"),
+      country: tenant.defaultCountry as CountryCode,
       pickupAddress: field(data, "pickupAddress"),
       dropoffAddress: field(data, "dropoffAddress"),
       notes: field(data, "notes"),

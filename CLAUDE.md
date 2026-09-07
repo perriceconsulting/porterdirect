@@ -28,6 +28,7 @@ agencies) who run the physical work under their own brand + domain.
 | Env file reading | [scripts/lib/load-env.sh](scripts/lib/load-env.sh) | The only place a secrets file is read; parses as data, never sourced |
 | Authorization policy | [packages/auth/src/permissions.ts](packages/auth/src/permissions.ts) | The role→permission matrix; pure, exhaustive, no inheritance chain |
 | Order lifecycle | [packages/orders/src/order-state.ts](packages/orders/src/order-state.ts) | Explicit transition table; terminal is terminal, no skipping, location bound to the order |
+| Phone handling | [packages/contact/src/phone.ts](packages/contact/src/phone.ts) | E.164 stored, formatted at point of use; libphonenumber metadata, never hand-rolled |
 | Password policy | [packages/auth/src/password-policy.ts](packages/auth/src/password-policy.ts) | NIST SP 800-63B: length + breach checking, deliberately NO composition rules |
 | Host → tenant classification | [packages/auth/src/tenant-host.ts](packages/auth/src/tenant-host.ts) | One normalisation, so every surface agrees what "same host" means |
 
@@ -48,6 +49,13 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
 - **Webhook double-apply.** Stripe re-delivers events; without idempotency a retry applies
   twice. `processed_webhook_events` + `handleStripeEvent` make it exactly-once.
 - **Money as float.** All amounts are integer cents. Never introduce floating-point money.
+- **A phone number stored as typed is several customers.** "(213) 373-4253",
+  "213-373-4253" and "2133734253" match nothing when a driver searches, and cannot be
+  handed to a masked-calling provider. Store E.164, format at point of use, and REFUSE
+  what will not parse — this is the field someone dials.
+- **Fictional numbers look valid and are not.** US area code 555 and Ofcom's 07700
+  900xxx block are reserved for drama; libphonenumber rejects both. Test fixtures using
+  them assert that the validator accepts numbers nobody can call.
 - **A layout class named for its STRUCTURE must not carry one caller's proportions.**
   `.row-2` was set to `2fr 1fr` to stop a plan dropdown clipping; the dropdown later
   moved to its own row and the ratio stayed, silently skewing every other pair — two
@@ -621,3 +629,28 @@ live-map reactivity.
     type checker. For anything a person looks at, **render it and look** — a screenshot is
     a cheap test that catches a class nothing else does.
   - Ratchets: tests = 264 + 6 PHAST + **27 e2e**; client components = 1; lint = 0.
+
+- **2026-09-07 — Phone numbers: canonical storage, locale-aware display.**
+  - A phone field that accepted forty `1`s with no formatting. Now: **E.164 stored,
+    formatted at point of use** — six spellings of one number normalise to one row, which
+    is what makes searching by phone and masked calling possible at all.
+  - **Not hand-rolled.** Numbering plans are irregular in ways that only show up in the
+    markets a white-label platform expands into, so `libphonenumber-js` (min metadata)
+    carries the rules. Unparseable input is REFUSED rather than stored raw: this is the
+    field a driver dials.
+  - The country comes from the TENANT, not the browser. A dispatcher travelling, or a
+    VPN, would otherwise silently change how their customers' numbers are read.
+  - **Two things the library taught me that I had wrong:**
+    - My first fixtures were `555-123-4567` and `07700 900123`, and every test failed.
+      Both are RESERVED FICTION ranges. The library was right; the fixtures asserted that
+      the validator accepts numbers nobody can call. Same class as the `"a".repeat(12)`
+      password fixture.
+    - `+44 7911` is attributed to **Guernsey**, not GB — several +44 mobile ranges belong
+      to Crown Dependencies. That exposed a real bug: `formatPhone` compared COUNTRY, so
+      it showed a neighbour's number in international form to a GB dispatcher who dials
+      it exactly like a domestic one. It now compares CALLING CODE.
+  - As-you-type formatting only fires when characters are ADDED. Formatting a deletion
+    re-inserts the punctuation being removed, so backspace appears to do nothing — the
+    most common way such a field becomes unusable. Verified in a real browser.
+  - Ratchets: tests = **289** + 6 PHAST + 27 e2e; client components = **2** (the input
+    genuinely cannot format between keystrokes without JS); lint = 0.

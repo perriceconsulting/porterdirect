@@ -543,6 +543,9 @@ h2 {
   display: grid;
   grid-template-columns: 1fr;
   gap: 0 1rem;
+  /* Without this a field whose sibling carries a hint stretches to match it, so one
+     input renders taller than the other in the same row. */
+  align-items: start;
 }
 .status-list {
   list-style: none;
@@ -953,5 +956,47 @@ th.num {
   .entry-form .form-actions .btn {
     width: auto;
     min-width: 12rem;
+  }
+}
+
+/* Wide viewports: use the width rather than reserving it.
+ *
+ * Capping the form's measure kept fields readable but left the panel half empty, which
+ * read as unbalanced — the fix for one problem created another. Two short groups sit
+ * side by side instead, so each field keeps a sensible measure AND the panel is filled.
+ * A dispatcher entering jobs benefits twice: less dead space, less vertical travel.
+ */
+@media (min-width: 900px) {
+  .entry-form {
+    max-width: none;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 2.5rem;
+    align-items: start;
+  }
+  .entry-form .field-group {
+    margin-bottom: 0;
+  }
+  .group-customer {
+    grid-column: 1;
+  }
+  .group-route {
+    grid-column: 2;
+  }
+  /* Side by side, so the stacked layout's horizontal rule does not apply.
+     `.field-group + .field-group` is (0,2,0) and would beat a bare `.group-route`
+     (0,1,0) — the override has to match its weight or the rule stays and renders as a
+     stray line beside the legend. */
+  .field-group.group-route {
+    border-top: none;
+    padding-top: 0;
+  }
+  .group-job {
+    grid-column: 1 / -1;
+    margin-top: 1.6rem;
+  }
+  .entry-form .form-actions {
+    grid-column: 1 / -1;
+    margin-top: 1.6rem;
   }
 }

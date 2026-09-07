@@ -9,7 +9,9 @@
 import { can } from "@porterdirect/auth";
 import { formatUsdCents } from "@porterdirect/billing";
 import { STATUS_LABELS, TYPE_LABELS, isTerminal, type OrderStatus, type OrderType } from "@porterdirect/orders";
+import { formatPhone, type CountryCode } from "@porterdirect/contact";
 import { SiteHeader } from "../../../_components/site-header";
+import { PhoneField } from "../../../_components/phone-field";
 import { signOutAction } from "../../../actions";
 import { createOrderAction } from "./actions";
 import { requireConsole } from "../../../../lib/console";
@@ -109,7 +111,11 @@ export default async function OrdersBoard({
                         <td>
                           {o.customerFirstName} {o.customerLastName}
                           <br />
-                          <span className="hint">{o.dropoffAddress}</span>
+                          <span className="hint">
+                            {o.customerPhone
+                              ? formatPhone(o.customerPhone, tenant.defaultCountry as CountryCode)
+                              : o.dropoffAddress}
+                          </span>
                         </td>
                         <td>{TYPE_LABELS[o.type]}</td>
                         <td>
@@ -173,7 +179,7 @@ export default async function OrdersBoard({
                 {/* Grouped into the three things an operator is actually entering: who
                     it is for, where it goes, and what the job is. A flat run of seven
                     fields reads as one undifferentiated list. */}
-                <fieldset className="field-group">
+                <fieldset className="field-group group-customer">
                   <legend>Customer</legend>
 
                   {/* First and last separately: one free-text name cannot tell two
@@ -191,16 +197,15 @@ export default async function OrdersBoard({
                     </div>
                   </div>
 
-                  <div className="field">
-                    <label htmlFor="customerPhone">Phone</label>
-                    <input id="customerPhone" name="customerPhone" type="tel" inputMode="tel" />
-                    <span className="hint">
-                      How this customer is identified — two people can share a name.
-                    </span>
-                  </div>
+                  <PhoneField
+                    name="customerPhone"
+                    label="Phone"
+                    country={tenant.defaultCountry as CountryCode}
+                    hint="How this customer is identified — two people can share a name."
+                  />
                 </fieldset>
 
-                <fieldset className="field-group">
+                <fieldset className="field-group group-route">
                   <legend>Route</legend>
 
                   <div className="field">
@@ -214,7 +219,7 @@ export default async function OrdersBoard({
                   </div>
                 </fieldset>
 
-                <fieldset className="field-group">
+                <fieldset className="field-group group-job">
                   <legend>Job</legend>
 
                   <div className="row-2">
@@ -235,18 +240,22 @@ export default async function OrdersBoard({
                     </div>
                   </div>
 
-                  <div className="field">
-                    <label htmlFor="scheduledFor">Scheduled for</label>
-                    <input id="scheduledFor" name="scheduledFor" type="datetime-local" />
-                    <span className="hint">
-                      Only used for a scheduled courier run, where the exact time window is
-                      the product. Leave blank for any other job type.
-                    </span>
-                  </div>
-
-                  <div className="field">
-                    <label htmlFor="notes">Notes for the driver</label>
-                    <input id="notes" name="notes" />
+                  {/* Paired so the Job group keeps the same field measure as the two
+                      groups above it. Spanning both columns made these stretch to the
+                      full panel width, which is the problem the measure cap solved. */}
+                  <div className="row-2">
+                    <div className="field">
+                      <label htmlFor="scheduledFor">Scheduled for</label>
+                      <input id="scheduledFor" name="scheduledFor" type="datetime-local" />
+                      <span className="hint">
+                        Scheduled courier runs only — the exact time window is the product
+                        for that type.
+                      </span>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="notes">Notes for the driver</label>
+                      <input id="notes" name="notes" />
+                    </div>
                   </div>
                 </fieldset>
 

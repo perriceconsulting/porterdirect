@@ -9,7 +9,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Workspace packages ship raw TS (exports -> ./src/index.ts); Next must transpile them.
-  transpilePackages: ["@porterdirect/billing", "@porterdirect/db"],
+  transpilePackages: ["@porterdirect/billing", "@porterdirect/db", "@porterdirect/contact", "@porterdirect/orders", "@porterdirect/auth"],
 
   webpack: (config) => {
     // The packages compile under TS `moduleResolution: NodeNext`, which REQUIRES
