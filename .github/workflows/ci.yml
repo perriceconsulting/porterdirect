@@ -50,3 +50,13 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npm test
+
+      # Isolation stress. Needs a database to seed tenants, so it runs only when the
+      # secret is present — skipped rather than failing an unconfigured fork.
+      - name: PHAST (tenant + auth isolation)
+        if: ${{ !cancelled() && env.DATABASE_URL != '' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          BETTER_AUTH_URL: http://localhost:3000
+        run: npm run phast

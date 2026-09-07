@@ -21,10 +21,13 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "verify:conventions": "bash scripts/verify-conventions.sh",
-    "verify": "npm run typecheck && npm run lint && npm run verify:conventions && npm test"
+    "verify": "npm run typecheck && npm run lint && npm run verify:conventions && npm test",
+    "phast": "playwright test",
+    "phast:serial": "npm run phast -- --workers=1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.63.0",
     "@types/node": "^20.17.0",
     "eslint": "^9.39.5",
     "tsx": "^4.23.13",

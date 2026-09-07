@@ -93,6 +93,7 @@ export default tseslint.config(
   {
     files: [
       "packages/**/test/**/*.ts",
+      "phast/**/*.ts",
       "scripts/**/*.ts",
       "packages/db/drizzle.config.ts",
       "*.config.ts",

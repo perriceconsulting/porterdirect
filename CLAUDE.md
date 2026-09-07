@@ -81,11 +81,11 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
 
 | Pillar | Status |
 |---|---|
-| **Tenant isolation** | **Applies — mandatory.** Multi-tenant/white-label; build the stress spec alongside the first tenant-scoped query. |
+| **Tenant isolation** | **BUILT** — [phast/tenant-isolation.spec.ts](phast/tenant-isolation.spec.ts). Verified to catch a planted leak, not merely to pass. |
 | **Data-integrity-under-load** | **Applies.** Webhook idempotency, seat/entitlement invariants — most as deterministic unit tests (already begun), browser only where a concern is browser-only. |
-| **Auth isolation** | Applies once tenant auth exists (roles: ops/dispatcher/driver). Deferred until auth lands. |
-| **Realtime DOM reactivity** | Applies to the live tracking map (later). |
-| **Render stability** | Applies to dashboards (later). |
+| **Auth isolation** | **BUILT** — auth landed, so this is no longer deferred. Same spec: session bleed, cross-tenant refusal, anonymous refusal, cache-control on identity. |
+| **Realtime DOM reactivity** | **Deliberately not built.** No live map exists; a spec would assert against nothing and read as coverage (the I caveat). |
+| **Render stability** | **Deliberately not built.** No dashboard exists yet. There is also no `phast:headed` script, because with no UI a headed run would imply a browser pillar we have not built. |
 
 Money/seat/entitlement invariants are unit tests, not browser tests (they are data
 invariants). Browser stress is reserved for tenant isolation, session/cache bleed, and
@@ -298,3 +298,25 @@ live-map reactivity.
   - Left alone (with reason): no sign-in UI yet — the endpoints exist and are exercised by
     HTTP, and a form is presentation over a contract that already works. Tenant-isolation
     PHAST spec is the next item and is now genuinely buildable.
+
+- **2026-09-07 — PHAST: tenant + auth isolation, and proof the spec can fail.**
+  - `npm run phast` runs concurrent assertions against the running app; `phast:serial`
+    pins one worker for debugging. Suite timeout is raised per-describe because several
+    contexts signing in and fanning out blows Playwright's 30s default, and the resulting
+    "Test ended" reads like a product failure while being a harness limit.
+  - Added `GET /api/me` — a genuinely needed endpoint (every client needs "who am I, in
+    which tenant, as what"), not test scaffolding. Its status codes carry meaning: 404 for
+    a host no tenant claims, 401 for no session, **403 for signed-in-but-not-a-member**.
+    That last distinction matters: "you are nobody here" is a different fact from "you are
+    nobody", and collapsing them hides cross-tenant attempts.
+  - Six assertions: concurrent per-actor isolation; a sustained interleaved burst; a valid
+    session on another tenant's host refused with no tenant id in the body; an unclaimed
+    host 404; anonymous 401; and `cache-control: private, no-store` on identity responses.
+  - **The spec was verified to FAIL.** Planting the classic bug — memoising the resolved
+    request context at module scope — produced exactly the expected signature
+    (`acme saw <globex tenant> expected <acme tenant>`). Worth recording precisely which
+    test caught it: the all-at-once test **passed**, because all three actors fired before
+    the cache populated; only the **sustained burst** failed. A leak from a lazily-warmed
+    cache is invisible on the first round, which is the whole reason the repeated-rounds
+    test exists.
+  - Ratchets: tests = 121 unit/integration + **6 PHAST**; lint errors = 0.
