@@ -4,7 +4,7 @@
 > record; the engineering standard and Single-Source tables live in [CLAUDE.md](CLAUDE.md).
 > Market claims are hypotheses to validate (§12), not established facts.
 
-Status: pre-launch. Last updated 2026-09-07.
+**Version 1.3.0** · Status: pre-launch · Last updated 2026-09-08.
 
 ---
 
@@ -56,9 +56,17 @@ the one sentence that has to land on both landing pages.
 
 ## 4. Two vertical modules on one shared core
 
-The platform is **one codebase**: a shared core + two domain modules. They share primitives
-(auth, tenancy, DB, payment rails, maps, location pipeline) but have distinct domain logic —
-they are NOT one product with skinned views.
+The platform is **one codebase**: a shared core + two domain modules sharing primitives
+(auth, tenancy, DB, payment rails, maps, location pipeline).
+
+**Corrected in v1.3.** This section used to say the modules have "distinct domain logic —
+NOT one product with skinned views." That is no longer true of the ORDER LIFECYCLE: cutting
+the shopping types left both surviving types on one path with no branch in the transition
+table, and a freight run moves through exactly the states a courier job does. The verticals
+now diverge in **capabilities and paperwork**, not in how a job moves — Rate Con OCR, IFTA,
+factoring invoices and broker GPS links are gated per tier (§9), and none of them touch the
+state machine. Worth stating plainly, because "distinct domain logic" would justify forking
+the order model, and nothing now justifies that.
 
 | | **Courier** (`app.` subdomain) | **Freight** (`fleet.` subdomain) |
 |---|---|---|
