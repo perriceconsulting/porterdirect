@@ -15,3 +15,7 @@ dist/
 *.log
 coverage/
 .next/
+
+# Playwright run output — regenerated every run, never source.
+test-results/
+playwright-report/
