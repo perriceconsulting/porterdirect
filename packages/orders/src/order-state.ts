@@ -18,22 +18,22 @@
  *   evidence the premium tier is sold on. The table refuses it; nothing has to remember.
  */
 
-/** What kind of job this is. Drives the front half of the lifecycle only. */
-export type OrderType =
-  | "fixed_pickup"
-  | "shop_in_store"
-  | "errand"
-  | "scheduled_courier";
+/**
+ * What kind of job this is. Drives the front half of the lifecycle only.
+ *
+ * `shop_in_store` and `errand` were removed in v1.3. They were variable-total types —
+ * pre-authorise an estimate, capture the true total at the till — and that whole payment
+ * model went with them: `authorized_cents`, `captured_cents` and `captureTotal` no longer
+ * exist, because for these two types the captured amount is always the agreed price.
+ * Git history holds the implementation if in-store shopping returns.
+ */
+export type OrderType = "fixed_pickup" | "scheduled_courier";
 
 export type OrderStatus =
   /** Created and priced, no driver yet. */
   | "pending"
   /** A driver holds it. */
   | "assigned"
-  /** Shopping types only: the driver is in the store picking items. */
-  | "shopping"
-  /** Shopping types only: at the till, resolving the true total. */
-  | "checkout"
   /** Goods are with the driver, moving to the drop-off. */
   | "en_route"
   /** Complete, with proof of delivery. */
@@ -50,16 +50,6 @@ export function isTerminal(status: OrderStatus): boolean {
 }
 
 /**
- * Types that pass through a shopping phase. `errand` is a variant of shop_in_store —
- * buy X, collect from Y — and shares its states rather than getting its own.
- */
-const SHOPPING_TYPES: readonly OrderType[] = ["shop_in_store", "errand"];
-
-export function hasShoppingPhase(type: OrderType): boolean {
-  return SHOPPING_TYPES.includes(type);
-}
-
-/**
  * Legal forward transitions per type. Cancellation and failure are handled separately
  * because they apply from ANY non-terminal state and listing them on every row would
  * bury the actual lifecycle.
@@ -73,20 +63,6 @@ const FORWARD: Readonly<Record<OrderType, Readonly<Partial<Record<OrderStatus, r
   scheduled_courier: {
     pending: ["assigned"],
     assigned: ["en_route"],
-    en_route: ["delivered"],
-  },
-  shop_in_store: {
-    pending: ["assigned"],
-    assigned: ["shopping"],
-    shopping: ["checkout"],
-    checkout: ["en_route"],
-    en_route: ["delivered"],
-  },
-  errand: {
-    pending: ["assigned"],
-    assigned: ["shopping"],
-    shopping: ["checkout"],
-    checkout: ["en_route"],
     en_route: ["delivered"],
   },
 };
@@ -181,15 +157,13 @@ export function assertTransition(type: OrderType, from: OrderStatus, to: OrderSt
  * continuing to track after delivery is a legal liability, not a feature.
  */
 export function isLocationVisible(status: OrderStatus): boolean {
-  return status === "assigned" || status === "shopping" || status === "checkout" || status === "en_route";
+  return status === "assigned" || status === "en_route";
 }
 
 /** Human-facing label. Kept here so every surface says the same word for the same state. */
 export const STATUS_LABELS: Record<OrderStatus, string> = {
   pending: "Unassigned",
   assigned: "Assigned",
-  shopping: "Shopping",
-  checkout: "At checkout",
   en_route: "On the way",
   delivered: "Delivered",
   cancelled: "Cancelled",
@@ -220,7 +194,24 @@ export function statusTone(status: OrderStatus): StatusTone {
 
 export const TYPE_LABELS: Record<OrderType, string> = {
   fixed_pickup: "Pickup and deliver",
-  shop_in_store: "Shop in store",
-  errand: "Errand",
   scheduled_courier: "Scheduled courier",
 };
+
+/**
+ * The exhaustive lists, derived rather than restated.
+ *
+ * Cutting two order types in v1.3 meant hand-editing FIVE copies of these lists — the
+ * union, the Postgres enum, the server action's validation array, the board's creatable
+ * types, and the tests. Nothing would have caught a missed one: `readonly OrderType[]`
+ * is perfectly satisfied by a list with a value MISSING, so an incomplete runtime
+ * validation array typechecks and silently rejects a legitimate type at the form
+ * boundary. That is the same two-places-drifting failure as `statusTone`, just spread
+ * over five.
+ *
+ * `Record<OrderType, string>` already forces the label maps to be exhaustive at compile
+ * time — a new type without a label does not build — so the labels ARE the canonical
+ * list and everything else derives from them. The cast is the one honesty cost, paid
+ * once here instead of five times in maintenance.
+ */
+export const ORDER_TYPES = Object.keys(TYPE_LABELS) as readonly OrderType[];
+export const ORDER_STATUSES = Object.keys(STATUS_LABELS) as readonly OrderStatus[];

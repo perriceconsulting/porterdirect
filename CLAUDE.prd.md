@@ -97,17 +97,26 @@ the vertical apps do not exist. Two entries deserve naming as decisions rather t
 | Blob storage (Vercel Blob or equivalent) | **Not built** | Load-bearing **at the entry tier**: signature + photo POD is a $199 Direct Courier feature, not a freight extra. Nothing can ship POD until this exists. |
 | Deployment (Vercel) | **Not built** | Nothing is deployed anywhere; `perrice.trucking.com` resolves to nothing, so the white-label promise is currently unserved |
 
-## 6. Polymorphic order model
+## 6. Order model
 
-One order type field drives the lifecycle; the back half (delivery leg, tracking, POD) is
-shared across all types:
+**v1.3 cut the product to two order types.** `shop_in_store` and `errand` were removed —
+code deleted, not parked, matching how the country picker was handled. Git history holds
+the implementation if in-store shopping returns.
 
 ```
-fixed_pickup:    ASSIGNED ─────────────────▶ EN_ROUTE ─▶ DELIVERED   (fixed total)
-shop_in_store:   ASSIGNED ─▶ SHOPPING ─▶ CHECKOUT ─▶ EN_ROUTE ─▶ DELIVERED
-errand/concierge: (variant of shop_in_store — buy X, pick up from Y)
-scheduled_courier: exact-time-window white-glove run
+fixed_pickup:      PENDING ─▶ ASSIGNED ─▶ EN_ROUTE ─▶ DELIVERED
+scheduled_courier: PENDING ─▶ ASSIGNED ─▶ EN_ROUTE ─▶ DELIVERED   (exact time window)
 ```
+
+Both types now share ONE lifecycle, so the transition table has no branch. Cancellation
+and failure apply from any non-terminal state and carry different reason sets (§10).
+
+What went with the shopping types, deliberately: the `SHOPPING` and `CHECKOUT` states,
+`hasShoppingPhase`, the `items_unavailable` failure reason, and **the entire
+pre-authorise/capture payment model** — `authorized_cents`, `captured_cents` and
+`captureTotal`. For a fixed pickup or a courier run the captured amount is always the
+agreed price, so a second nullable amount was a column that could only ever disagree with
+itself. No row in the database carried one when it was dropped.
 
 ## 7. Key subsystems
 
@@ -118,11 +127,30 @@ scheduled_courier: exact-time-window white-glove run
   a delivery; predictive bounding-box map-tile caching on dispatch; **event-sourced** offline
   queue with client-generated ids + sequence numbers; background sync on reconnect; optimistic
   UI that reconciles and surfaces sync failures.
-- **Communication** — per-order channel carries canned messages + free-text chat; for shopping,
-  a **structured substitution approve/reject** card (primary), free chat (fallback); optional
-  masked calling (Twilio Proxy). CS can read an order's chat for disputes.
-- **Proof of delivery / chain-of-custody** — signature + photo (stored high-res as potential
-  evidence), plus a who-held-it-when trail for legal/medical/high-value.
+- **Communication** — per-order channel carries canned messages + free-text chat; optional
+  masked calling (Twilio Proxy), which is what E.164 storage exists for. CS can read an
+  order's chat for disputes. (The structured substitution approve/reject card went with
+  the shopping types in v1.3.)
+- **Package scanning (v1.3)** — camera barcode/QR scan at two checkpoints: **pickup
+  loading** and **final handoff**. Requires an entity that does not exist yet: an order
+  today has no packages, so this needs a tenant-scoped parcel table. The design question
+  that decides whether the feature is worth anything: **a package scanned at pickup and
+  not at handoff must produce a state, not a log line.** Detecting the missing parcel is
+  the entire value; scanning that cannot tell you something is missing is decoration.
+- **Proof of delivery / chain-of-custody (v1.3)** — **full-resolution** photo capture,
+  digital recipient signature, geotagged timestamping, and an automated **branded POD
+  PDF**, plus a who-held-it-when trail for legal/medical/high-value. Four notes that are
+  requirements rather than detail:
+  - *Full-resolution is load-bearing.* Compression is the landmine in §10 — a POD photo
+    is potential evidence, and a re-encoded one may not be.
+  - *Geotagging is a single point captured AT the closing transition*, not a subscription.
+    Location visibility is bound to order status and ends when the order does (§10); a POD
+    geotag sits inside that window and must not be implemented as continued tracking.
+  - *The branded PDF is the first real test of "100% platform anonymity."* It is the first
+    artifact that leaves the platform and reaches the tenant's own customer. If it carries
+    PorterDirect anywhere, anonymity is broken at the most visible possible point.
+  - *Both capabilities presuppose the driver app*, which does not exist. Camera scanning
+    and signature capture need a device, so neither is buildable before that surface.
 - **Dispatch & scheduling** — the real economic engine (premium utilization is the hard part):
   exact-time scheduling to pack a courier's day; affinity ("your regular driver") vs. nearest-
   available tradeoff; premium-safe batching.
@@ -139,8 +167,6 @@ scheduled_courier: exact-time-window white-glove run
 - **Customer → tenant / driver payouts:** Stripe **Connect** (Express accounts) — 1099
   contractor marketplace payouts + instant-pay; **Issuing** later for branded/store cards.
   This is the model DoorDash/Instacart/Spark use.
-- **Shop-in-store:** pre-authorize estimate + buffer → capture actual at checkout; refund
-  not-found items. Invariant: `captured ≤ authorized`; re-auth if actual exceeds.
 - **Freight:** factoring integration, not card charges.
 
 ## 9. Pricing (tenant subscriptions) — canonical in `packages/billing/src/plans.ts`
@@ -178,7 +204,7 @@ one-time source-code license ($5k–$25k+).
 Tenant data bleed · wrong Stripe account returns 200 · webhook double-apply · money-as-float ·
 entitlement drift · off-shift / post-delivery location tracking (legal liability) · optimistic/
 offline updates that never reconcile · over-compressed POD photos destroying evidence · blind
-trust of OCR extraction · pre-auth expiry / capture > authorized.
+trust of OCR extraction.
 
 ## 11. Current build status
 
@@ -211,21 +237,22 @@ Built and verified against live services (not just unit-tested):
 1. **No email provider.** Invites and password resets cannot be delivered, so a tenant
    cannot onboard their second person. This is the hard blocker.
 2. **Nothing is deployed.** The white-label domain — the thing being sold — is unserved.
-3. **No blob storage**, so POD cannot ship, and POD is an entry-tier feature (§5).
-4. **Stripe Tax is off** and the app hard-refuses a live key while it is; needs a head
+3. **No blob storage.** Now blocks three things, not one: the full-res POD photo, the
+   signature, and the generated PDF. POD is an entry-tier feature (§5), so this is the
+   top infrastructure gap.
+4. **No driver app**, which both v1.3 capabilities — scanning and POD — sit behind.
+5. **Stripe Tax is off** and the app hard-refuses a live key while it is; needs a head
    office address and registrations.
-5. **No git remote**, so CI is inert.
+6. **No git remote**, so CI is inert.
 
 **Sold but not built:** Rate Con OCR, factoring invoices, IFTA, broker GPS links,
 sub-accounts, native app deployment, API/webhook access, platform anonymity. All are now
 declared as `capabilities` and gate correctly — the gate returns the right answer for a
 feature that does not exist yet, which is the right order to build it in.
 
-**Known product gaps inside what IS built:** `shop_in_store` and `errand` are
-variable-total types, but the form takes one fixed price; the columns
-(`authorized_cents`, `captured_cents`) and the `captured <= authorized` rule exist and
-nothing writes them. The errand "buy X" list is not captured. There is no tenant settings
-UI, so existing tenants cannot change their country.
+**Known product gaps inside what IS built:** there is no tenant settings UI, so existing
+tenants cannot change their country. (The variable-total gap closed itself in v1.3 — the
+types that had it were cut.)
 
 ## 12. Hypotheses to validate (NOT established facts)
 
@@ -249,8 +276,9 @@ hypotheses until sourced:
 
 - First-product sequencing: chosen "shared core + both thin" with white-label core from day one;
   recommend one vertical (courier) leads by a few weeks so a solid product demos before a broad one.
-- Product-catalog sourcing (shopping/errand orders) — undecided; the gating dependency. Suggest a
-  small owned pilot-store catalog before retailer integrations.
+- ~~Product-catalog sourcing (shopping/errand orders)~~ — **closed by v1.3.** Cutting the
+  shopping types removed the gating dependency entirely; retailer catalogue integration is
+  no longer on the critical path.
 - Customer surface: web link vs native app (dashboard = web, driver = native are settled).
 - Immediate build fork: (a) provide Stripe test keys → wire real checkout + reconciler, or
   (b) scaffold Next.js platform app + webhook route so the "one real call" can be exercised.

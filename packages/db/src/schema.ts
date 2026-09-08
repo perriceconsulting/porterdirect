@@ -20,6 +20,7 @@ import {
   uniqueIndex,
   index,
 } from "drizzle-orm/pg-core";
+import { ORDER_STATUSES, ORDER_TYPES } from "@porterdirect/orders";
 
 /** A licensee: the operator who rents the platform (courier firm, dispatcher, agency). */
 export const tenants = pgTable(
@@ -209,34 +210,36 @@ export type TenantRole = (typeof tenantRole.enumValues)[number];
  * Orders — the job itself.
  * =========================================================================== */
 
-export const orderType = pgEnum("order_type", [
-  "fixed_pickup",
-  "shop_in_store",
-  "errand",
-  "scheduled_courier",
-]);
+/**
+ * Enum values DERIVE from the domain vocabulary rather than restating it.
+ *
+ * The dependency points db -> orders on purpose: `packages/orders` is pure and owns the
+ * lifecycle, and persistence mirrors it. Restating the values here is how the database
+ * accepts a status the state machine has never heard of — or, as happened when the
+ * shopping types were cut, how one of five copies gets missed.
+ *
+ * drizzle's `pgEnum` wants a non-empty tuple and our lists are `readonly T[]`, so the
+ * shape is asserted here. It is checked where it matters: the migration generator
+ * compares these values against the live database, so a mismatch surfaces as a migration
+ * rather than as a runtime insert failure.
+ */
+const asEnumValues = <T extends string>(values: readonly T[]): [T, ...T[]] =>
+  values as unknown as [T, ...T[]];
 
-export const orderStatus = pgEnum("order_status", [
-  "pending",
-  "assigned",
-  "shopping",
-  "checkout",
-  "en_route",
-  "delivered",
-  "cancelled",
-  "failed",
-]);
+export const orderType = pgEnum("order_type", asEnumValues(ORDER_TYPES));
+
+export const orderStatus = pgEnum("order_status", asEnumValues(ORDER_STATUSES));
 
 /**
  * A job. Tenant-scoped like everything owned, and enum-typed on both `type` and
  * `status` so an impossible value fails on write rather than reaching the state
  * machine as a string nothing matches.
  *
- * MONEY IS INTEGER CENTS throughout. `authorized` and `captured` exist separately
- * because a shop-in-store job pre-authorises an estimate and captures the true total
- * later; the invariant `captured <= authorized` is enforced in the domain layer, since
- * the database cannot express it across a nullable pair without a check constraint that
- * would also have to know the order type.
+ * MONEY IS INTEGER CENTS throughout. There is ONE amount: `price_cents`, the agreed
+ * price. The `authorized_cents` / `captured_cents` pair was removed in v1.3 along with
+ * the shopping order types it existed for — for a fixed pickup or a scheduled courier
+ * run the captured amount is always the agreed price, so a second nullable amount was a
+ * column that could only ever disagree with itself.
  */
 export const orders = pgTable(
   "orders",
@@ -316,12 +319,8 @@ export const orders = pgTable(
 
     notes: text("notes"),
 
-    /** Quoted to the customer, in cents. */
+    /** Agreed with the customer, in cents. The only amount a job carries. */
     priceCents: integer("price_cents").notNull().default(0),
-    /** Variable-total jobs only: pre-authorised estimate plus buffer. */
-    authorizedCents: integer("authorized_cents"),
-    /** Variable-total jobs only: the true total taken at the till. */
-    capturedCents: integer("captured_cents"),
 
     /** The driver holding it. Null until assigned; a member of THIS tenant. */
     assignedUserId: text("assigned_user_id").references(() => users.id, {

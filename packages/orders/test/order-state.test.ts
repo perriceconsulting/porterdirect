@@ -6,26 +6,17 @@ import {
   TYPE_LABELS,
   assertTransition,
   canTransition,
-  hasShoppingPhase,
   isLocationVisible,
   isTerminal,
+  ORDER_STATUSES,
+  ORDER_TYPES,
   nextStatuses,
   statusTone,
   type OrderStatus,
-  type OrderType,
 } from "../src/order-state.js";
 
-const ALL_TYPES: OrderType[] = ["fixed_pickup", "shop_in_store", "errand", "scheduled_courier"];
-const ALL_STATUSES: OrderStatus[] = [
-  "pending",
-  "assigned",
-  "shopping",
-  "checkout",
-  "en_route",
-  "delivered",
-  "cancelled",
-  "failed",
-];
+const ALL_TYPES = ORDER_TYPES;
+const ALL_STATUSES = ORDER_STATUSES;
 
 describe("the happy paths match the product brief", () => {
   it("fixed_pickup: pending -> assigned -> en_route -> delivered", () => {
@@ -35,21 +26,23 @@ describe("the happy paths match the product brief", () => {
     }
   });
 
-  it("shop_in_store: adds shopping and checkout before the delivery leg", () => {
-    const path: OrderStatus[] = ["pending", "assigned", "shopping", "checkout", "en_route", "delivered"];
-    for (let i = 0; i < path.length - 1; i++) {
-      expect(canTransition("shop_in_store", path[i]!, path[i + 1]!).ok, `${path[i]} -> ${path[i + 1]}`).toBe(true);
-    }
-  });
-
-  it("errand shares the shopping lifecycle rather than inventing its own", () => {
-    expect(hasShoppingPhase("errand")).toBe(true);
-    expect(canTransition("errand", "assigned", "shopping").ok).toBe(true);
-  });
-
   it("scheduled_courier follows the fixed_pickup shape", () => {
-    expect(hasShoppingPhase("scheduled_courier")).toBe(false);
     expect(canTransition("scheduled_courier", "assigned", "en_route").ok).toBe(true);
+  });
+
+  it("every type now shares one lifecycle", () => {
+    // v1.3 cut the shopping types, so the branch in the transition table is gone. Worth
+    // asserting rather than assuming: a second shape reappearing without a second type
+    // to justify it is the drift this table exists to prevent.
+    const path: OrderStatus[] = ["pending", "assigned", "en_route", "delivered"];
+    for (const type of ALL_TYPES) {
+      for (let i = 0; i < path.length - 1; i++) {
+        expect(
+          canTransition(type, path[i]!, path[i + 1]!).ok,
+          `${type}: ${path[i]} -> ${path[i + 1]}`,
+        ).toBe(true);
+      }
+    }
   });
 });
 
@@ -65,20 +58,9 @@ describe("no skipping", () => {
     expect(canTransition("fixed_pickup", "assigned", "delivered").ok).toBe(false);
   });
 
-  it("refuses a shopping order skipping the till", () => {
-    // Straight from shopping to en_route means no true total was ever captured, so the
-    // pre-authorisation is never reconciled against what was actually bought.
-    expect(canTransition("shop_in_store", "shopping", "en_route").ok).toBe(false);
-  });
-
-  it("refuses a non-shopping order entering the shopping phase", () => {
-    expect(canTransition("fixed_pickup", "assigned", "shopping").ok).toBe(false);
-    expect(canTransition("scheduled_courier", "assigned", "checkout").ok).toBe(false);
-  });
-
   it("refuses moving backwards", () => {
     expect(canTransition("fixed_pickup", "en_route", "assigned").ok).toBe(false);
-    expect(canTransition("shop_in_store", "checkout", "shopping").ok).toBe(false);
+    expect(canTransition("scheduled_courier", "en_route", "assigned").ok).toBe(false);
   });
 });
 
@@ -106,7 +88,7 @@ describe("terminal is terminal", () => {
 
   it("offers no onward moves from a terminal state", () => {
     for (const terminal of TERMINAL_STATUSES) {
-      expect(nextStatuses("shop_in_store", terminal)).toEqual([]);
+      expect(nextStatuses("scheduled_courier", terminal)).toEqual([]);
     }
   });
 });
@@ -132,7 +114,7 @@ describe("cancellation and failure", () => {
 describe("nextStatuses drives the UI", () => {
   it("offers exactly the legal moves plus the two escape hatches", () => {
     expect(nextStatuses("fixed_pickup", "assigned")).toEqual(["en_route", "cancelled", "failed"]);
-    expect(nextStatuses("shop_in_store", "assigned")).toEqual(["shopping", "cancelled", "failed"]);
+    expect(nextStatuses("scheduled_courier", "pending")).toEqual(["assigned", "cancelled", "failed"]);
   });
 
   it("never offers a move the transition check would refuse", () => {
@@ -150,8 +132,6 @@ describe("nextStatuses drives the UI", () => {
 describe("location visibility is bound to the order, not the person", () => {
   it("is visible only while the job is live", () => {
     expect(isLocationVisible("assigned")).toBe(true);
-    expect(isLocationVisible("shopping")).toBe(true);
-    expect(isLocationVisible("checkout")).toBe(true);
     expect(isLocationVisible("en_route")).toBe(true);
   });
 

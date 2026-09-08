@@ -10,7 +10,13 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { isRedirectError } from "@porterdirect/auth";
-import { IllegalTransitionError, type OrderStatus, type OrderType } from "@porterdirect/orders";
+import {
+  IllegalTransitionError,
+  ORDER_STATUSES,
+  ORDER_TYPES,
+  type OrderStatus,
+  type OrderType,
+} from "@porterdirect/orders";
 import { parseUsdToCents } from "@porterdirect/billing";
 import type { Address, CountryCode } from "@porterdirect/contact";
 import { requireConsole } from "../../../../lib/console";
@@ -20,24 +26,6 @@ import {
   redispatchOrder,
   transitionOrder,
 } from "../../../../lib/orders";
-
-const ORDER_TYPES: readonly OrderType[] = [
-  "fixed_pickup",
-  "shop_in_store",
-  "errand",
-  "scheduled_courier",
-];
-
-const ORDER_STATUSES: readonly OrderStatus[] = [
-  "pending",
-  "assigned",
-  "shopping",
-  "checkout",
-  "en_route",
-  "delivered",
-  "cancelled",
-  "failed",
-];
 
 function field(data: FormData, key: string): string {
   const v = data.get(key);

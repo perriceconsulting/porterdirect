@@ -96,22 +96,6 @@ const SEEDS: readonly Seed[] = [
     scheduledFor: new Date(Date.now() + 6 * HOUR),
   },
   {
-    type: "shop_in_store",
-    first: "Ana", last: "Delgado", phone: "4156217000",
-    pickup: ["2001 Market St", "San Francisco", "CA", "94114"],
-    dropoff: ["1 Ferry Building", "San Francisco", "CA", "94111"],
-    price: 3400, notes: "Substitutions need approval before checkout",
-    advanceTo: ["assigned", "shopping"],
-  },
-  {
-    type: "errand",
-    first: "Thomas", last: "Whitfield", phone: "2024561111",
-    pickup: ["950 Independence Ave SW", "Washington", "DC", "20560"],
-    dropoff: ["1600 Pennsylvania Avenue NW", "Washington", "DC", "20500"],
-    price: 2900, notes: "Collect framed print, then deliver",
-    advanceTo: ["assigned", "shopping", "checkout"],
-  },
-  {
     type: "fixed_pickup",
     first: "Grace", last: "Mbeki", phone: "2133734253",
     pickup: ["221 N Figueroa St", "Los Angeles", "CA", "90012"],

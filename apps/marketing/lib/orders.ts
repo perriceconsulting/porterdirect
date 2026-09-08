@@ -302,42 +302,6 @@ export async function transitionOrder(
   return updated;
 }
 
-/**
- * Record the true total for a variable-total job.
- *
- * Enforces the hard invariant from the product brief: `captured <= authorized`. Going
- * over means re-authorising, never over-capturing — taking more than was authorised is
- * a chargeback and a broken promise, not a rounding detail.
- */
-export async function captureTotal(
-  db: Db,
-  args: { tenantId: string; orderId: string; capturedCents: number },
-): Promise<Order> {
-  if (!Number.isInteger(args.capturedCents) || args.capturedCents < 0) {
-    throw new OrderValidationError("Captured amount must be a whole number of cents.");
-  }
-  const order = await findOrder(db, args.tenantId, args.orderId);
-  if (!order) throw new OrderValidationError("Order not found.");
-
-  const authorized = order.authorizedCents;
-  if (authorized === null) {
-    throw new OrderValidationError("This order has no authorisation to capture against.");
-  }
-  if (args.capturedCents > authorized) {
-    throw new OrderValidationError(
-      `Cannot capture ${args.capturedCents} against an authorisation of ${authorized}. ` +
-        `Re-authorise for the higher amount instead.`,
-    );
-  }
-
-  const [updated] = await db
-    .update(orders)
-    .set({ capturedCents: args.capturedCents, updatedAt: new Date() })
-    .where(and(eq(orders.tenantId, args.tenantId), eq(orders.id, args.orderId)))
-    .returning();
-  return updated!;
-}
-
 /** Rebuild the pickup address from a row, for display. */
 export function pickupAddressOf(order: Order): Address {
   return {

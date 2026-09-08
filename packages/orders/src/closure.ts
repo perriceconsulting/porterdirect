@@ -32,8 +32,7 @@ export type FailureReason =
   | "delivery_refused"
   | "goods_damaged"
   | "vehicle_breakdown"
-  | "weather_or_road"
-  | "items_unavailable";
+  | "weather_or_road";
 
 export type ClosureReason = CancellationReason | FailureReason;
 
@@ -54,7 +53,6 @@ export const FAILURE_REASONS: readonly FailureReason[] = [
   "goods_damaged",
   "vehicle_breakdown",
   "weather_or_road",
-  "items_unavailable",
 ];
 
 /** Operator vocabulary, not database vocabulary. A dispatcher says "nobody home". */
@@ -73,7 +71,6 @@ export const CLOSURE_REASON_LABELS: Record<ClosureReason, string> = {
   goods_damaged: "Goods damaged",
   vehicle_breakdown: "Vehicle breakdown",
   weather_or_road: "Weather or road conditions",
-  items_unavailable: "Items unavailable in store",
 };
 
 /** Which reasons may accompany a given terminal status? */
@@ -132,7 +129,6 @@ export function faultFor(reason: ClosureReason): ClosureFault {
       return "customer";
     case "scheduling_conflict":
     case "weather_or_road":
-    case "items_unavailable":
       return "neither";
   }
 }

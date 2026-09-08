@@ -9,6 +9,7 @@
 import { can } from "@porterdirect/auth";
 import { formatUsdCents } from "@porterdirect/billing";
 import {
+  ORDER_TYPES,
   STATUS_LABELS,
   TYPE_LABELS,
   isTerminal,
@@ -28,7 +29,12 @@ import { dropoffAddressOf, listOrders } from "../../../../lib/orders";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Dispatch — PorterDirect" };
 
-const CREATABLE_TYPES: OrderType[] = ["fixed_pickup", "scheduled_courier", "shop_in_store", "errand"];
+/**
+ * Every order type is creatable today. Derived rather than listed so the form cannot
+ * silently stop offering a type that the domain still supports — if the two ever need to
+ * differ, that is a product decision worth writing down here, not a list that drifted.
+ */
+const CREATABLE_TYPES: readonly OrderType[] = ORDER_TYPES;
 
 /** Tone comes from the domain, never from this file — see `statusTone`. */
 function statusClass(status: OrderStatus): string {

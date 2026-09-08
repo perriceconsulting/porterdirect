@@ -30,6 +30,7 @@ agencies) who run the physical work under their own brand + domain.
 | Env file reading | [scripts/lib/load-env.sh](scripts/lib/load-env.sh) | The only place a secrets file is read; parses as data, never sourced |
 | Authorization policy | [packages/auth/src/permissions.ts](packages/auth/src/permissions.ts) | The role→permission matrix; pure, exhaustive, no inheritance chain |
 | Order lifecycle | [packages/orders/src/order-state.ts](packages/orders/src/order-state.ts) | Explicit transition table; terminal is terminal, no skipping, location bound to the order |
+| Order type/status vocabulary | [packages/orders/src/order-state.ts](packages/orders/src/order-state.ts) | `ORDER_TYPES`/`ORDER_STATUSES`, derived from the label records. The Postgres enum, the action validators and the board all derive; reconciled by `order-vocabulary.test.ts` |
 | Why a job ended | [packages/orders/src/closure.ts](packages/orders/src/closure.ts) | Closed reason sets; cancelled and failed are NOT the same list, and fault is three-valued |
 | How a status PRESENTS | [packages/orders/src/order-state.ts](packages/orders/src/order-state.ts) | `STATUS_LABELS` + `statusTone`; the board and the order page both derive, neither decides |
 | Phone handling | [packages/contact/src/phone.ts](packages/contact/src/phone.ts) | E.164 stored, formatted at point of use; libphonenumber metadata, never hand-rolled |
@@ -133,6 +134,17 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
   shell assign empty and run the value as a command, printing secrets into logs and
   transcripts. Never `source`/`.` a secrets file — use `scripts/lib/load-env.sh`, which
   parses env files as data. It already cost one key roll.
+- **A typed list can be INCOMPLETE and still compile.** `readonly OrderType[]` is
+  satisfied by a list with a value missing, so a hand-maintained runtime validation array
+  silently rejects a legitimate value at the form boundary while every type check passes.
+  Order types and statuses existed in five copies — the union, the Postgres enum, the
+  server action validator, the board's creatable types, and the tests — and cutting two
+  values meant editing all five with nothing to catch a miss. They now derive from the
+  label records, which `Record<OrderType, string>` already forces to be exhaustive.
+- **Narrowing a Postgres enum fails on existing rows.** drizzle regenerates the type and
+  casts with `USING col::new_type`, which errors on any row holding a removed value —
+  and the migration is where you find out. Audit and clear the incompatible rows first,
+  scoped by the property that dooms them, and prove zero remain before migrating.
 - **Entitlement drift.** Entitlement is derived in one place (`isEntitled`); do not re-derive
   "is this tenant active?" ad hoc anywhere else.
 - **A capability check keyed to marketing copy moves when the copy does.** `features` is
@@ -857,3 +869,47 @@ live-map reactivity.
     domain, referrer, PWA manifest, app store listing); flagged in the PRD rather than
     decomposed, because decomposing it now would invent requirements ahead of a customer.
   - Ratchets: tests = **347** (was 327) + 6 PHAST + 33 e2e; client components = 2; lint = 0.
+
+- **2026-09-08 — v1.3: shopping order types cut; one vocabulary instead of five.**
+  - PRD v1.3 narrowed `orderTypes` to `fixed_pickup` and `scheduled_courier`. Cut rather
+    than parked, matching the country-picker precedent: `shop_in_store`, `errand`, the
+    `shopping`/`checkout` states, `hasShoppingPhase`, the `items_unavailable` failure
+    reason, and **the whole pre-authorise/capture payment model** (`authorized_cents`,
+    `captured_cents`, `captureTotal`). For the two surviving types the captured amount is
+    always the agreed price, so a second nullable amount was a column that could only
+    disagree with itself. **Zero rows carried one**, checked before dropping.
+  - This closed two long-standing gaps by deletion rather than by building: the
+    variable-total columns nothing wrote, and the errand "buy X" list never captured.
+    Product-catalogue sourcing — previously the gating dependency in the PRD — left the
+    critical path with them.
+  - **The migration would have failed on live data.** drizzle narrows an enum by
+    recreating the type and casting `USING col::new_type`, which errors on any row still
+    holding a removed value. Two seeded orders and seven events held them. Audited first
+    (read the rows, counted them, confirmed they were regenerable demo data on the demo
+    tenant), cleared scoped by the property that doomed them — the order TYPE, not a name
+    pattern — and asserted zero incompatible rows survived before migrating. The repo has
+    already deleted a real user with a loose `LIKE` sweep; this is that lesson applied.
+  - **The cut exposed the real finding: five copies of one list.** Removing two values
+    meant hand-editing the union, the Postgres enum, the server action's validator, the
+    board's creatable types, and the tests. Nothing would have caught a missed one —
+    `readonly OrderType[]` is satisfied by an INCOMPLETE list, so a validator missing a
+    value compiles and then silently refuses a legitimate job type at the form boundary.
+    Same two-places-drifting failure as `statusTone`, spread over five.
+  - **S:** `ORDER_TYPES`/`ORDER_STATUSES` are now derived from the label records, which
+    `Record<OrderType, string>` already forces to be exhaustive at compile time — so the
+    labels ARE the list. The Postgres enum derives from them too (db -> orders; `orders`
+    is pure, so no cycle), because restating the vocabulary in the schema is how the
+    database comes to accept a status the state machine has never heard of.
+  - The derivation is guarded, not merely conventional:
+    [order-vocabulary.test.ts](apps/marketing/test/order-vocabulary.test.ts) asserts the
+    enums equal the domain lists and that no shopping vocabulary survives. Verified
+    non-vacuous by re-hardcoding the enum with `errand` restored — three tests failed.
+  - Recorded in the PRD, not built: v1.3's package scanning and POD. Both need a driver
+    app that does not exist. Scanning needs a parcel entity that does not exist, and its
+    design question is whether a package scanned at pickup but not at handoff produces a
+    STATE — detecting the missing parcel is the whole value. POD's geotag must be a single
+    point captured at the closing transition, not continued tracking (the location
+    landmine), and its branded PDF is the first artifact reaching a tenant's customer, so
+    it is the first real test of "100% platform anonymity". Blob storage now blocks three
+    things rather than one.
+  - Ratchets: tests = **349** (was 347) + 6 PHAST + 33 e2e; client components = 2; lint = 0.
