@@ -58,6 +58,20 @@ export default defineConfig({
   ],
   webServer: {
     command: "npm run dev -w @porterdirect/marketing",
+    /**
+     * The breach check is served from a fixture during e2e.
+     *
+     * Every signup otherwise makes a live call to api.pwnedpasswords.com, and the
+     * signup-heavy specs run in parallel, so HIBP rate-limits and a DIFFERENT auth test
+     * fails on most full runs. That reads like a product flake and is a third-party
+     * quota. The fixture speaks the same wire format, so the k-anonymity logic is still
+     * exercised — only the network is removed.
+     *
+     * NOTE: `reuseExistingServer` means this env only applies when Playwright STARTS the
+     * server. A dev server already running on the port keeps its own environment, so the
+     * same value is set in .env.local for local runs.
+     */
+    env: { PASSWORD_BREACH_SOURCE: "fixture" },
     url: BASE_URL,
     reuseExistingServer: true,
     timeout: 180_000,

@@ -135,11 +135,19 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
   `/duplicate key/` and retried with a fresh reference. Once a SECOND unique constraint
   existed on the table, a collision on that one burned five attempts and then reported a
   reference-allocation failure — an error pointing at entirely the wrong problem.
-- **The e2e suite makes a live third-party call on every signup.** The breach check hits
-  `api.pwnedpasswords.com`, which rate-limits, and the signup-heavy specs run in parallel.
-  This produces a MOVING failure — a different auth test fails each run — which reads like
-  a product flake and is a rate limit. Inject the range-fetcher in tests rather than
-  retrying.
+- **A live third-party call inside a test path produces a MOVING failure.** The breach
+  check hits `api.pwnedpasswords.com`, which rate-limits, and the signup-heavy e2e specs
+  ran in parallel — so a DIFFERENT auth test failed on most full runs, reading like a
+  product flake while being a quota. Fixed with `PASSWORD_BREACH_SOURCE=fixture`, which
+  answers in HIBP's own wire format so the k-anonymity comparison is still exercised.
+  Note the distinction from `PASSWORD_BREACH_CHECK=false`, which SKIPS the check: an
+  off-switch would have made the e2e assertion "a breached password is refused" pass
+  while testing nothing. A test seam must keep the assertion meaningful.
+- **A test seam that weakens a security control must be unable to survive a deploy.**
+  `PASSWORD_BREACH_SOURCE=fixture` THROWS when `NODE_ENV=production`, and the match is
+  exact — "true"/"1"/"yes"/"FIXTURE" do not enable it. A breach check that quietly became
+  a no-op in production would keep the signup form saying all the right things while
+  accepting passwords from every public dump.
 - **Check-then-act idempotency.** Any "have we handled this?" followed by "mark handled"
   is a race: two concurrent deliveries both pass. Claim atomically (INSERT against a
   unique key) and release on a failed apply. Verified live — a check-then-act store
@@ -969,3 +977,31 @@ live-map reactivity.
     isolation. It is a test-harness dependency, not a product fault, and the fix is to
     inject the range-fetcher rather than to retry.
   - Ratchets: tests = **354** (was 349) + 6 PHAST + 33 e2e; client components = 2; lint = 0.
+
+- **2026-09-08 — Made the e2e suite trustworthy again.**
+  - The suite failed a **different** auth test on most full runs. Diagnosed rather than
+    retried: every signup makes a live call to `api.pwnedpasswords.com`, the signup specs
+    run in parallel, and HIBP rate-limits. Each test passed in isolation, which is the
+    signature of a shared external dependency rather than a product fault.
+  - **Fixed with a fixture SOURCE, not an off-switch.** `PASSWORD_BREACH_CHECK=false`
+    already existed and would have been the lazy fix — but it skips the check, so the e2e
+    assertion "a breached password is refused" would have passed while testing nothing.
+    `PASSWORD_BREACH_SOURCE=fixture` answers in HIBP's own wire format from a local list,
+    so prefix matching, suffix comparison and the count column all still run. Only the
+    network is removed.
+  - **The seam cannot survive a deploy**, and that is tested, not promised: it throws on
+    `NODE_ENV=production`, and the match is exact so no truthy value enables it. A breach
+    check that silently no-oped in production is the worst failure available here.
+  - **O, with the metric:** e2e went from ~5.0m to ~3.0m, because every signup previously
+    blocked on a network round-trip. Two consecutive clean runs where the previous two
+    both failed.
+  - The fixture list is real leaked passwords, not invented strings — a fixture proving
+    we refuse `test-breached-password-1` proves the plumbing and nothing about the rule.
+  - Wired in two places for one reason worth remembering: Playwright's
+    `reuseExistingServer` means its `webServer.env` only applies when Playwright STARTS
+    the server, so a dev server already on the port keeps its own environment. The value
+    is therefore also in `.env.local`. Documented in `.env.example`.
+  - **Blocked, not done:** rotating the Neon role password. The MCP call was refused by
+    the permission classifier — correctly, it destroys a live credential. The connection
+    string is still exposed in this session's transcript and still needs rotating by hand.
+  - Ratchets: tests = **360** (was 354) + 6 PHAST + 33 e2e; client components = 2; lint = 0.
