@@ -364,7 +364,16 @@ export const orders = pgTable(
     dropoffAreaIdx: index("orders_dropoff_area_idx").on(t.tenantId, t.dropoffPostalCode),
     // "What is going wrong, and how often" — the query the reason field exists for.
     closureIdx: index("orders_closure_idx").on(t.tenantId, t.closureReason),
-    redispatchIdx: index("orders_redispatch_idx").on(t.redispatchedFromOrderId),
+    /**
+     * UNIQUE, not a plain index. A job may be re-dispatched at most once, and that rule
+     * was previously enforced by SELECT-then-INSERT — the same check-then-act race the
+     * webhook ledger already had, where two concurrent requests both pass the check and
+     * both act. Here that means two drivers dispatched to one delivery.
+     *
+     * Postgres treats NULLs as distinct, so the many not-re-dispatched orders do not
+     * collide with each other; only a second re-dispatch OF THE SAME order does.
+     */
+    redispatchIdx: uniqueIndex("orders_redispatch_idx").on(t.redispatchedFromOrderId),
   }),
 );
 

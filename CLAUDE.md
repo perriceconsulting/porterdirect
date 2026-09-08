@@ -125,6 +125,21 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
   compute tax ourselves. `computeMonthlyTotalCents` is a PRE-TAX subtotal, so it will
   legitimately differ from a Stripe invoice total; a surface showing them side by side
   has a display bug, not a math bug.
+- **A wrapped driver error defeats message matching.** Drizzle wraps the driver error in
+  a `DrizzleQueryError` whose message is the failed SQL; the SQLSTATE (`23505`) and the
+  constraint NAME live on `.cause`. Two retry handlers here tested `err.message` for a
+  constraint name and therefore never matched — one silently stopped retrying reference
+  collisions, the other turned a refusal into a raw query error. Classify with
+  `isUniqueViolation` (walks the cause chain), never with a regex over the message.
+- **A retry loop must only retry what it knows how to fix.** `createOrder` caught any
+  `/duplicate key/` and retried with a fresh reference. Once a SECOND unique constraint
+  existed on the table, a collision on that one burned five attempts and then reported a
+  reference-allocation failure — an error pointing at entirely the wrong problem.
+- **The e2e suite makes a live third-party call on every signup.** The breach check hits
+  `api.pwnedpasswords.com`, which rate-limits, and the signup-heavy specs run in parallel.
+  This produces a MOVING failure — a different auth test fails each run — which reads like
+  a product flake and is a rate limit. Inject the range-fetcher in tests rather than
+  retrying.
 - **Check-then-act idempotency.** Any "have we handled this?" followed by "mark handled"
   is a race: two concurrent deliveries both pass. Claim atomically (INSERT against a
   unique key) and release on a failed apply. Verified live — a check-then-act store
@@ -913,3 +928,44 @@ live-map reactivity.
     it is the first real test of "100% platform anonymity". Blob storage now blocks three
     things rather than one.
   - Ratchets: tests = **349** (was 347) + 6 PHAST + 33 e2e; client components = 2; lint = 0.
+
+- **2026-09-08 — I shipped a check-then-act race; closing it, and covering orders under load.**
+  - **The defect was mine, in the file that explains why not to write it.**
+    `redispatchOrder` selected for an existing re-dispatch and then inserted — the same
+    shape as the webhook ledger bug — while the function directly above it carries a
+    comment saying a SELECT-then-INSERT is that exact race. Its own comment named the
+    consequence: "an impatient double-click quietly puts two drivers on the same
+    delivery." Two concurrent callers both passed the check and both created a job.
+  - A second window existed even single-threaded: the job was created and THEN linked, so
+    a failure between the two left an unlinked duplicate that the once-only rule could no
+    longer see.
+  - Fixed the way this repo already fixes it: **a unique index answers the question
+    atomically**, the link travels IN the insert, and the loser reads back which job won
+    so the operator is told where the work went rather than just being refused.
+  - **Two latent bugs surfaced while fixing it.** Drizzle wraps driver errors, so the
+    constraint name is on `.cause`, never in `.message` — meaning the pre-existing
+    reference-retry regex had never matched and was rethrowing collisions instead of
+    retrying. And that catch matched any `/duplicate key/`, so once a second unique
+    constraint existed, an "already re-dispatched" collision would burn five retries and
+    report a reference failure. Both now go through `isUniqueViolation`, which walks the
+    cause chain and reads SQLSTATE `23505` — shape, not text, the same lesson as
+    `classifyAuthError`.
+  - **Order concurrency is now covered** —
+    [order-concurrency.test.ts](apps/marketing/test/order-concurrency.test.ts), closing a
+    gap this file has listed as open since orders landed. Placed as an integration test
+    rather than in PHAST deliberately, per our own rule: uniqueness is a data invariant,
+    so it belongs in a deterministic test, not a browser rendering of the rule.
+  - **Verified non-vacuous, and the method mattered.** Re-introducing the pre-check did
+    NOT fail the race test — because the index was still there doing the work. Only
+    dropping the unique index reproduced the bug: **8 concurrent attempts, 8 winners.**
+    Worth recording, because it says plainly where the guarantee lives. A guard proven by
+    reverting the wrong layer proves nothing.
+  - Also covered: concurrent forward transitions and concurrent closure (cancel racing
+    fail, both legal from `assigned`) each apply exactly once, with one audit line — so
+    the compare-and-swap in `transitionOrder` is now demonstrated rather than assumed.
+  - **Reported, not fixed:** the e2e suite fails a DIFFERENT auth test on most full runs.
+    Diagnosed as HIBP rate-limiting — every signup makes a live call to
+    `api.pwnedpasswords.com` and the signup specs run in parallel. Each test passes in
+    isolation. It is a test-harness dependency, not a product fault, and the fix is to
+    inject the range-fetcher rather than to retry.
+  - Ratchets: tests = **354** (was 349) + 6 PHAST + 33 e2e; client components = 2; lint = 0.

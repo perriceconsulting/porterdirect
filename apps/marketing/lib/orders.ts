@@ -7,7 +7,14 @@
  * data. If a function in this file does not take a tenant id, it is a bug.
  */
 import { and, desc, eq } from "drizzle-orm";
-import { orderEvents, orders, users, type Db, type Order } from "@porterdirect/db";
+import {
+  isUniqueViolation,
+  orderEvents,
+  orders,
+  users,
+  type Db,
+  type Order,
+} from "@porterdirect/db";
 import {
   CLOSURE_REASON_LABELS,
   assertTransition,
@@ -43,6 +50,13 @@ export interface CreateOrderInput {
    * so an unscheduled "scheduled" job is a contradiction the board cannot act on.
    */
   readonly scheduledFor?: Date | null;
+  /**
+   * Set when this job is a re-attempt of a failed one. Written in the SAME insert as the
+   * row, never as a follow-up update: a create-then-link pair leaves a window where the
+   * new job exists unlinked, and a failure inside it produces a duplicate job that the
+   * once-only rule can no longer see.
+   */
+  readonly redispatchedFromOrderId?: string;
 }
 
 /**
@@ -138,6 +152,7 @@ export async function createOrder(db: Db, input: CreateOrderInput): Promise<Orde
           notes: input.notes?.trim() || null,
           priceCents: input.priceCents,
           scheduledFor: input.scheduledFor ?? null,
+          redispatchedFromOrderId: input.redispatchedFromOrderId ?? null,
         })
         .returning();
 
@@ -152,8 +167,16 @@ export async function createOrder(db: Db, input: CreateOrderInput): Promise<Orde
       });
       return created;
     } catch (err) {
-      const message = err instanceof Error ? err.message : "";
-      if (!/orders_tenant_reference_idx|duplicate key/i.test(message)) throw err;
+      // Read by SQLSTATE + constraint name, not by matching the message. Drizzle wraps
+      // the driver error and its message is the failed SQL, so the previous
+      // `/orders_tenant_reference_idx|duplicate key/` test never matched anything — this
+      // loop was not retrying reference collisions at all, it was rethrowing them.
+      //
+      // Narrowed to the REFERENCE constraint too: a retry loop must only retry the thing
+      // it knows how to fix. Left broad, an "already re-dispatched" collision would burn
+      // five attempts generating new references and then report a reference failure,
+      // pointing at entirely the wrong problem.
+      if (!isUniqueViolation(err, "orders_tenant_reference_idx")) throw err;
       // Collision on the reference — try another.
     }
   }
@@ -356,40 +379,45 @@ export async function redispatchOrder(
     );
   }
 
-  const existing = await db
-    .select({ id: orders.id, reference: orders.reference })
-    .from(orders)
-    .where(
-      and(eq(orders.tenantId, args.tenantId), eq(orders.redispatchedFromOrderId, args.orderId)),
-    )
-    .limit(1);
-  if (existing.length > 0) {
-    // Otherwise an impatient double-click quietly puts two drivers on the same delivery.
+  // NO pre-check that this job was already re-dispatched.
+  //
+  // It used to SELECT for an existing re-dispatch and then INSERT, which is exactly the
+  // check-then-act race the webhook ledger was already bitten by: two concurrent requests
+  // — an impatient double-click, or two dispatchers on the same job — both pass the
+  // SELECT and both create an order. The comment above it named that precise failure
+  // while the code allowed it.
+  //
+  // The unique index on `redispatched_from_order_id` answers the question atomically, so
+  // the loser of the race gets a constraint violation instead of a second driver. The
+  // link travels IN the insert, so there is no window where the new job exists unlinked.
+  let created: Order;
+  try {
+    created = await createOrder(db, {
+      tenantId: args.tenantId,
+      actorUserId: args.actorUserId,
+      type: original.type,
+      customerFirstName: original.customerFirstName,
+      customerLastName: original.customerLastName,
+      customerPhone: original.customerPhone ?? undefined,
+      country: original.pickupCountry as CountryCode,
+      pickup: pickupAddressOf(original),
+      dropoff: dropoffAddressOf(original),
+      priceCents: original.priceCents,
+      notes: original.notes ?? undefined,
+      scheduledFor: null,
+      redispatchedFromOrderId: original.id,
+    });
+  } catch (err) {
+    if (!isUniqueViolation(err, "orders_redispatch_idx")) throw err;
+    // Lost the race, or a genuine second attempt. Read back what won so the operator is
+    // told WHICH job now carries the work rather than just being refused.
+    const winner = await findRedispatch(db, args.tenantId, args.orderId);
     throw new OrderValidationError(
-      `This job has already been re-dispatched as ${existing[0]!.reference}.`,
+      winner
+        ? `This job has already been re-dispatched as ${winner.reference}.`
+        : "This job has already been re-dispatched.",
     );
   }
-
-  const created = await createOrder(db, {
-    tenantId: args.tenantId,
-    actorUserId: args.actorUserId,
-    type: original.type,
-    customerFirstName: original.customerFirstName,
-    customerLastName: original.customerLastName,
-    customerPhone: original.customerPhone ?? undefined,
-    country: original.pickupCountry as CountryCode,
-    pickup: pickupAddressOf(original),
-    dropoff: dropoffAddressOf(original),
-    priceCents: original.priceCents,
-    notes: original.notes ?? undefined,
-    scheduledFor: null,
-  });
-
-  const [linked] = await db
-    .update(orders)
-    .set({ redispatchedFromOrderId: original.id })
-    .where(and(eq(orders.tenantId, args.tenantId), eq(orders.id, created.id)))
-    .returning();
 
   await db.insert(orderEvents).values({
     tenantId: args.tenantId,
@@ -400,7 +428,7 @@ export async function redispatchOrder(
     note: `Re-dispatch of ${original.reference}`,
   });
 
-  return linked!;
+  return created;
 }
 
 /** The follow-up raised for a failed job, if there is one. */

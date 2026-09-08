@@ -85,6 +85,13 @@
       "when": 1788868689461,
       "tag": "0011_opposite_multiple_man",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1788874533611,
+      "tag": "0012_lowly_giant_man",
+      "breakpoints": true
     }
   ]
 }
