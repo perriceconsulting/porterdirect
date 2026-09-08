@@ -22,6 +22,33 @@
 
 export type PlanId = "direct_courier" | "fleet_freight" | "white_label_agency";
 
+/**
+ * What a plan lets a tenant DO, as opposed to what its marketing bullet says.
+ *
+ * Deliberately separate from `features`. A feature string is display copy — it gets
+ * reworded, split, translated and A/B tested, and the day someone edits "IFTA state fuel
+ * tracking" to "Fuel tax reporting" a capability check keyed on that string silently
+ * grants or revokes access. A permission and a sentence must never be the same value.
+ *
+ * Written out per plan rather than derived by inheritance ("fleet = courier + extras"),
+ * for the same reason the role matrix in `packages/auth/src/permissions.ts` is: widening
+ * a parent would silently widen every child, and the tiers are a commercial decision that
+ * should be readable in full at the point of sale.
+ */
+export type PlanCapability =
+  | "custom_domain"
+  | "branded_tracking"
+  | "offline_maps"
+  | "proof_of_delivery"
+  | "rate_con_ocr"
+  | "factoring_invoices"
+  | "ifta_tracking"
+  | "broker_gps_links"
+  | "sub_accounts"
+  | "native_app_deploy"
+  | "api_access"
+  | "platform_anonymity";
+
 export interface Plan {
   readonly id: PlanId;
   readonly name: string;
@@ -36,7 +63,10 @@ export interface Plan {
    * blank or point at the wrong Price and nothing catches it.
    */
   readonly setupFeePriceEnv: string | null;
+  /** Display copy for the pricing page. Never read by a permission check. */
   readonly features: readonly string[];
+  /** What this plan may actually do. Read by `planAllows`; never rendered as copy. */
+  readonly capabilities: readonly PlanCapability[];
   readonly stripePriceEnv: string; // env var holding this plan's Stripe Price id (mirror)
 }
 
@@ -55,6 +85,12 @@ export const PLANS: readonly Plan[] = [
       "Offline-first map caching",
       "Digital proof-of-delivery (signature + photo)",
     ],
+    capabilities: [
+      "custom_domain",
+      "branded_tracking",
+      "offline_maps",
+      "proof_of_delivery",
+    ],
     stripePriceEnv: "STRIPE_PRICE_DIRECT_COURIER",
   },
   {
@@ -72,6 +108,16 @@ export const PLANS: readonly Plan[] = [
       "IFTA state fuel tracking",
       "Broker GPS share links",
     ],
+    capabilities: [
+      "custom_domain",
+      "branded_tracking",
+      "offline_maps",
+      "proof_of_delivery",
+      "rate_con_ocr",
+      "factoring_invoices",
+      "ifta_tracking",
+      "broker_gps_links",
+    ],
     stripePriceEnv: "STRIPE_PRICE_FLEET_FREIGHT",
   },
   {
@@ -88,6 +134,20 @@ export const PLANS: readonly Plan[] = [
       "White-labeled native app store deployment",
       "API / Webhook access",
       "100% platform anonymity",
+    ],
+    capabilities: [
+      "custom_domain",
+      "branded_tracking",
+      "offline_maps",
+      "proof_of_delivery",
+      "rate_con_ocr",
+      "factoring_invoices",
+      "ifta_tracking",
+      "broker_gps_links",
+      "sub_accounts",
+      "native_app_deploy",
+      "api_access",
+      "platform_anonymity",
     ],
     stripePriceEnv: "STRIPE_PRICE_WHITE_LABEL_AGENCY",
   },

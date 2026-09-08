@@ -37,6 +37,23 @@ operators who already have local relationships and handle the physical work + lo
 - Medical & legal courier fleets needing strict chain-of-custody.
 - Small-fleet freight: owner-operators and 1–15 truck fleets, independent dispatchers.
 
+### 3.1 Primary avatars (the two we actually build and market for)
+
+Everything above is a market; these two are the buyers whose pain drives the roadmap and
+the search terms. Keywords are **acquisition intent**, not product requirements — they
+belong here rather than in the catalogue because no code derives from them.
+
+| | **White-Glove Courier Operator** | **Small-Fleet Freight Dispatcher** |
+|---|---|---|
+| Surface | `app.porterdirect.com` | `fleet.porterdirect.com` |
+| Core pain | Enterprise pricing (Onfleet, Dispatch Science) with no affordable custom-domain white-labeling | Hours re-keying pickup, dropoff and rate details out of broker Rate Con PDFs |
+| Buys because | Their brand is the product; a gig-app-looking tracking page loses the client | Paperwork speed is cash flow — the invoice cannot wait on manual entry |
+| Search intent | "white label dispatch software for small fleet", "custom branded driver app", "courier dispatch software custom domain", "cheaper alternative to Onfleet" | "rate con OCR parser", "upload rate confirmation auto dispatch", "auto populate load from broker PDF", "dispatch app with instant factoring invoice PDF" |
+
+Both avatars name the same wedge from opposite ends: **the incumbents charge per delivery
+and put their own brand on the customer's screen.** Zero commission plus a custom domain is
+the one sentence that has to land on both landing pages.
+
 ## 4. Two vertical modules on one shared core
 
 The platform is **one codebase**: a shared core + two domain modules. They share primitives
@@ -68,6 +85,17 @@ PorterDirect Platform (npm-workspaces monorepo, multi-tenant, white-label)
 - **Four surfaces:** Driver app (native, produces location), Customer app (web/native,
   consumes one order), Back-office dashboard (web, consumes fleet, on-shift, audited),
   Backend (shared pipeline). One producer, two consumers, one backend.
+
+**Built vs. intended.** The tree above is the target shape, not the current one — today
+there is a single `apps/marketing` serving marketing, auth, and the operator console, and
+the vertical apps do not exist. Two entries deserve naming as decisions rather than facts:
+
+| Concern | Status | Note |
+|---|---|---|
+| Neon Postgres + Drizzle | **Built** | Canonical schema in `packages/db/src/schema.ts` |
+| Next.js App Router, TypeScript | **Built** | One app, three verticals' worth of routes still to split |
+| Blob storage (Vercel Blob or equivalent) | **Not built** | Load-bearing **at the entry tier**: signature + photo POD is a $199 Direct Courier feature, not a freight extra. Nothing can ship POD until this exists. |
+| Deployment (Vercel) | **Not built** | Nothing is deployed anywhere; `perrice.trucking.com` resolves to nothing, so the white-label promise is currently unserved |
 
 ## 6. Polymorphic order model
 
@@ -117,11 +145,25 @@ scheduled_courier: exact-time-window white-glove run
 
 ## 9. Pricing (tenant subscriptions) — canonical in `packages/billing/src/plans.ts`
 
-| Tier | Price | Seats | Highlights |
+| Tier | Price | Drivers included | Highlights |
 |---|---|---|---|
-| **Direct Courier** | $199/mo | 5 incl., $25/extra | CNAME, branded PWA tracking, offline maps, POD |
-| **Fleet & Freight** | $499/mo | 15 incl., $25/extra | + Rate Con OCR, factoring invoices, IFTA, broker GPS |
-| **White-Label Agency** | $999/mo + $1,500 setup | 50 incl., $25/extra | + sub-accounts, native app deploy, API/webhooks, anonymity |
+| **Direct Courier** | $199/mo | 5, then $25/extra | CNAME, branded PWA tracking, offline maps, POD |
+| **Fleet & Freight** | $499/mo | 15, then $25/extra | + Rate Con OCR, factoring invoices, IFTA, broker GPS |
+| **White-Label Agency** | $999/mo + $1,500 setup | 50, then $25/extra | + sub-accounts, native app deploy, API/webhooks, anonymity |
+
+**"Included", never "limit".** The driver count is a billing threshold, not a wall: the
+sixth driver on Direct Courier is added and charged $25, not refused. Nothing in the code
+enforces a cap, and that is the intended product — `billableExtraSeats` bills the excess.
+The distinction matters commercially: a limit makes growth a sales conversation and a
+support ticket, while a threshold makes it revenue. If a hard cap is ever wanted it needs
+a separate field and an enforcement point, because today there is neither.
+
+**Capabilities are separate from these bullets.** What a tier lets a tenant *do* is
+declared as `capabilities` on each plan in the catalogue and read by `planAllows` /
+`tenantAllows`; the text above is display copy. They are deliberately different fields —
+a marketing bullet gets reworded, and a permission keyed to that sentence would silently
+move with it. `tenantAllows` requires BOTH that the plan carries the capability and that
+the subscription is entitled, so a lapsed Agency tenant does not keep working API access.
 
 Add-ons: native app-store deployment ($499 one-time), SMS/WhatsApp (metered pass-through +20%),
 extra seats ($25/mo). Positioning: **zero per-delivery commission** — beats Onfleet ($619/mo
@@ -140,14 +182,50 @@ trust of OCR extraction · pre-auth expiry / capture > authorized.
 
 ## 11. Current build status
 
-**Billing slice (licensee subscriptions) — built, 27 unit tests green, `tsc -b` clean.**
-- npm-workspaces monorepo; `@porterdirect/db` (Drizzle schema, tenant-scoped); `@porterdirect/
-  billing` (canonical plan catalog, pure entitlement/seat/money logic, Stripe test-mode guard,
-  verify + idempotent webhook dispatch).
-- Stripe dev-setup instantiated: `docs/stripe-dev-setup.md`, `scripts/stripe-doctor.sh`,
-  `scripts/guard-stripe-env.sh`, `.env.example`.
-- **Not yet:** live Stripe calls (needs test keys), DB-backed webhook store/sink (ports only),
-  Next.js apps, auth, the driver app, either vertical's domain logic, lint config.
+Kept honest deliberately: this section was months stale (it claimed 27 tests, no auth and
+no Next.js app) while the ledger in `CLAUDE.md` was current. A status section nobody
+trusts is worse than none, because it gets quoted.
+
+**One operator can sign up, pay, and run real dispatch work end to end.** Signup → tenant
+provisioned → Stripe Checkout → webhook → operator console → invite a team → raise a job →
+move it through the lifecycle → close it with a reason → re-dispatch a failure.
+
+Built and verified against live services (not just unit-tested):
+
+- **Billing** — canonical catalogue, 6 Stripe Prices created, webhook verification and
+  **atomic** idempotency proven under two concurrent listeners, one real subscription
+  reconciled end to end. Tax behaviour settled as exclusive + Stripe Tax.
+- **Identity & tenancy** — Better Auth on our own schema (no vendor `organization` table),
+  explicit role matrix, tenant checked before role, isolation verified under concurrent
+  load against forged, malformed and foreign tenant ids.
+- **Orders** — explicit transition table, terminal-is-terminal, append-only audit trail,
+  per-tenant references, tenant scoping inside the WHERE clause.
+- **Closure** — cancelled and failed carry different reason sets; re-dispatch raises a new
+  linked job rather than reopening a closed one.
+- **Contact data** — E.164 phones, structured addresses (`region`/`postal_code`).
+- **Enforcement** — lint, conventions guard, CI, and a test suite whose guards have each
+  been verified to fail on a planted defect.
+
+**Blocking a first paying customer, in order:**
+
+1. **No email provider.** Invites and password resets cannot be delivered, so a tenant
+   cannot onboard their second person. This is the hard blocker.
+2. **Nothing is deployed.** The white-label domain — the thing being sold — is unserved.
+3. **No blob storage**, so POD cannot ship, and POD is an entry-tier feature (§5).
+4. **Stripe Tax is off** and the app hard-refuses a live key while it is; needs a head
+   office address and registrations.
+5. **No git remote**, so CI is inert.
+
+**Sold but not built:** Rate Con OCR, factoring invoices, IFTA, broker GPS links,
+sub-accounts, native app deployment, API/webhook access, platform anonymity. All are now
+declared as `capabilities` and gate correctly — the gate returns the right answer for a
+feature that does not exist yet, which is the right order to build it in.
+
+**Known product gaps inside what IS built:** `shop_in_store` and `errand` are
+variable-total types, but the form takes one fixed price; the columns
+(`authorized_cents`, `captured_cents`) and the `captured <= authorized` rule exist and
+nothing writes them. The errand "buy X" list is not captured. There is no tenant settings
+UI, so existing tenants cannot change their country.
 
 ## 12. Hypotheses to validate (NOT established facts)
 

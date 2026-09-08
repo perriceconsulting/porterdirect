@@ -3,7 +3,7 @@
  * function here is a deterministic data invariant that unit tests cover in milliseconds
  * (CLAUDE.md: an invariant belongs in a fast test, not a browser).
  */
-import { getPlan, type Plan } from "./plans.js";
+import { getPlan, isKnownPlanId, type Plan, type PlanCapability } from "./plans.js";
 import type { StripeSubscriptionSnapshot, SubscriptionStatus, TenantSubscription } from "./types.js";
 
 /** Map Stripe's raw status string onto our normalized vocabulary. */
@@ -31,6 +31,39 @@ export function normalizeStatus(rawStatus: string): SubscriptionStatus {
  */
 export function isEntitled(status: SubscriptionStatus): boolean {
   return status === "active" || status === "trialing";
+}
+
+/**
+ * Does this PLAN include the capability? A commercial question, not an access decision.
+ *
+ * Use it to decide what the pricing page advertises or what an upgrade would unlock.
+ * To decide whether a tenant may actually use something, use `tenantAllows` — a lapsed
+ * Agency subscription still has `api_access` in its plan and must not still hold the key.
+ */
+export function planAllows(planId: string, capability: PlanCapability): boolean {
+  return getPlan(planId).capabilities.includes(capability);
+}
+
+/**
+ * May this tenant use the capability RIGHT NOW?
+ *
+ * Two conditions, and both are load-bearing: the plan must carry the capability, and the
+ * subscription must be entitled. Checking only the plan leaves a cancelled tenant with
+ * working API keys and OCR; checking only entitlement gives a $199 courier the freight
+ * module. Entitlement is not re-derived here — `isEntitled` remains the one rule
+ * (DOSI-S), this composes it.
+ *
+ * A tenant with no subscription row at all is allowed nothing.
+ */
+export function tenantAllows(
+  subscription: Pick<TenantSubscription, "planId" | "status"> | null | undefined,
+  capability: PlanCapability,
+): boolean {
+  if (!subscription) return false;
+  if (!isEntitled(subscription.status)) return false;
+  // An unknown plan id is a bug, but refusing is the safe direction for an access check.
+  if (!isKnownPlanId(subscription.planId)) return false;
+  return planAllows(subscription.planId, capability);
 }
 
 /** Convert a webhook snapshot into our canonical TenantSubscription, enforcing invariants. */

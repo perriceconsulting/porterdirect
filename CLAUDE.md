@@ -16,6 +16,8 @@ agencies) who run the physical work under their own brand + domain.
 | Concern | Canonical origin | Notes |
 |---|---|---|
 | Plan/pricing catalog | [packages/billing/src/plans.ts](packages/billing/src/plans.ts) | Amounts authoritative; Stripe Prices mirror it |
+| What a tier may DO | [packages/billing/src/plans.ts](packages/billing/src/plans.ts) | `capabilities` + `planAllows`/`tenantAllows`. Separate from `features`, which is display copy |
+| Product requirements / positioning | [CLAUDE.prd.md](CLAUDE.prd.md) | The one PRD. Restates prices as a declared mirror, reconciled by `prd-reconciliation.test.ts` |
 | Billing domain types | [packages/billing/src/types.ts](packages/billing/src/types.ts) | `SubscriptionStatus`, snapshots, `TenantSubscription` |
 | Subscription/seat/entitlement logic | [packages/billing/src/subscription-state.ts](packages/billing/src/subscription-state.ts) | Pure; one entitlement rule (`isEntitled`) |
 | Webhook handling (verify + idempotent dispatch) | [packages/billing/src/webhook.ts](packages/billing/src/webhook.ts) | Stripe status is SSOT; DB mirrors via webhooks |
@@ -133,6 +135,15 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
   parses env files as data. It already cost one key roll.
 - **Entitlement drift.** Entitlement is derived in one place (`isEntitled`); do not re-derive
   "is this tenant active?" ad hoc anywhere else.
+- **A capability check keyed to marketing copy moves when the copy does.** `features` is
+  display text and `capabilities` is the permission list; they are separate fields on
+  purpose. Gating on a feature STRING means rewording "IFTA state fuel tracking" silently
+  changes who can use it. Equally: checking the plan alone leaves a cancelled Agency
+  tenant with working API access — `tenantAllows` requires the plan AND entitlement.
+- **A PRD that restates prices is a second source of truth.** It is also the copy a human
+  quotes in a sales call, so it drifts where it does the most damage.
+  `prd-reconciliation.test.ts` reads the real `CLAUDE.prd.md` and fails when the table and
+  the catalogue disagree — verified by planting `$459` and watching it fail.
 - **Off-shift / post-delivery tracking** (driver app, later): location visibility is wired to
   shift/order status; continuing to track after off-shift is a legal liability, not a bug.
 - **Optimistic/offline updates that never reconcile** (driver app, later): every optimistic or
@@ -792,3 +803,57 @@ live-map reactivity.
     second use, not the third. Worth revisiting if operators read these columns as a
     ledger.
   - Ratchets: tests = **327** + 6 PHAST + **33** e2e; client components = 2; lint = 0.
+
+- **2026-09-07 — PRD reconciled with the code; tier capabilities made machine-readable.**
+  - A PRD arrived as JSON restating the catalogue. The prices, seat counts and tier names
+    matched `plans.ts` exactly, and `app`/`fleet` were already reserved subdomains — so
+    most of it needed no change. Four things did.
+  - **`driverLimit` was the wrong word, and it contradicted `additionalDriverPrice`.** A
+    limit refuses the sixth driver; what is built is an included count with $25 overage,
+    and nothing anywhere enforces a cap. A wall and a meter are different products, and
+    the code is the one a customer experiences. The PRD now says "included, never limit"
+    and explains what a hard cap would additionally require, since today there is no
+    field and no enforcement point.
+  - **Capabilities are now data, separate from copy.** Tier features were prose strings
+    gated nowhere: `isEntitled` only answers "is the subscription active", never "may
+    this tenant use OCR". Each plan carries `capabilities: PlanCapability[]`, read by
+    `planAllows` (a commercial question) and `tenantAllows` (an access decision). They are
+    separate from `features` deliberately — a permission keyed to a marketing sentence
+    moves the day someone rewords the sentence.
+  - **`tenantAllows` requires the plan AND entitlement.** Checking the plan alone leaves a
+    cancelled Agency tenant with working API access; checking entitlement alone gives a
+    $199 courier the freight module. It composes `isEntitled` rather than re-deriving it.
+    An unknown plan id refuses rather than throwing — an access check is the wrong place
+    to turn a data problem into an outage.
+  - Capability lists are written out **per tier, not inherited**, for the same reason the
+    role matrix is: widening a parent silently widens every child. The monotonicity that
+    inheritance would have given for free is asserted as a property instead — a dearer
+    tier may never carry fewer capabilities than a cheaper one.
+  - **The gate was verified to fail.** Removing the entitlement line made exactly the two
+    tests that exist for it fail; the rest stayed green.
+  - **One PRD, and it now reconciles.** No `prd.json` was added — a second PRD restating
+    prices is a second source of truth, and `CLAUDE.prd.md` already declared the catalogue
+    canonical. It keeps the numbers a human needs and
+    [prd-reconciliation.test.ts](packages/billing/test/prd-reconciliation.test.ts) reads
+    the REAL document (never a fixture, which would drift identically) and fails on any
+    disagreement. Verified by planting `$459/mo` and watching it fail. It also guards
+    itself: a test asserts a row is found for every plan, because a reformatted table that
+    matched nothing would let every other assertion pass vacuously.
+  - Merged in from the new document: the two researched buyer avatars with their pain
+    points and search intent. Those live in the PRD rather than the catalogue because no
+    code derives from them — acquisition intent is not a product requirement.
+  - **Corrected two claims that were aspirational, not true.** `storage: Vercel Blob` and
+    `deployment: Vercel` describe nothing that exists. That matters more than it reads:
+    signature + photo POD is a **$199 entry-tier** feature, so blob storage is blocking at
+    the bottom of the price list, not a freight extra.
+  - **§11 was months stale** — it claimed 27 tests, no auth and no Next.js app while the
+    ledger here was current. Rewritten to state what is built, what blocks a first paying
+    customer in order, and what is sold but not built. A status section nobody trusts is
+    worse than none, because it still gets quoted.
+  - Left alone (with reason): the tier→subdomain model needed no change; `classifyHost`
+    already reserves `app` and `fleet` as platform surfaces, so the PRD and the host rules
+    agree. Nothing is served on them yet, which is a deployment gap and not a model gap.
+    "100% Platform Anonymity" is still one bullet carrying a lot of engineering (sender
+    domain, referrer, PWA manifest, app store listing); flagged in the PRD rather than
+    decomposed, because decomposing it now would invent requirements ahead of a customer.
+  - Ratchets: tests = **347** (was 327) + 6 PHAST + 33 e2e; client components = 2; lint = 0.
