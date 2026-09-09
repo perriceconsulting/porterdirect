@@ -186,14 +186,30 @@ export async function createOrder(db: Db, input: CreateOrderInput): Promise<Orde
   throw new OrderValidationError("Could not allocate an order reference. Try again.");
 }
 
-/** This tenant's orders, newest first. */
-export async function listOrders(db: Db, tenantId: string, limit = 50): Promise<Order[]> {
-  return db
-    .select()
-    .from(orders)
-    .where(eq(orders.tenantId, tenantId))
-    .orderBy(desc(orders.createdAt))
-    .limit(limit);
+/**
+ * This tenant's orders, newest first.
+ *
+ * `assignedTo` narrows to one driver's work IN THE QUERY, which is not a style
+ * preference. The board previously fetched the most recent `limit` rows and filtered to
+ * the driver afterwards, in the page — so on a tenant with more than `limit` jobs, a
+ * driver whose work was not among the most recent saw an EMPTY BOARD. It failed only
+ * once an operator got busy, which is the worst time for a driver's job list to vanish,
+ * and it looked like "no work today" rather than a bug.
+ *
+ * The tenant predicate stays exactly where it was; this adds a second one beside it
+ * rather than moving anything.
+ */
+export async function listOrders(
+  db: Db,
+  tenantId: string,
+  opts: { limit?: number; assignedTo?: string } = {},
+): Promise<Order[]> {
+  const limit = opts.limit ?? 50;
+  const where = opts.assignedTo
+    ? and(eq(orders.tenantId, tenantId), eq(orders.assignedUserId, opts.assignedTo))
+    : eq(orders.tenantId, tenantId);
+
+  return db.select().from(orders).where(where).orderBy(desc(orders.createdAt)).limit(limit);
 }
 
 /**

@@ -65,7 +65,7 @@ export default async function OrderDetail({
   const moves = can(membership.role, "orders:update:assigned") ? nextStatuses(type, status) : [];
   // Split, because closing a job needs a reason and moving it forward does not.
   const closers = moves.filter((m): m is "cancelled" | "failed" => m === "cancelled" || m === "failed");
-  const forward = moves.filter((m) => m !== "cancelled" && m !== "failed");
+  let forward = moves.filter((m) => m !== "cancelled" && m !== "failed");
   const tracking = isLocationVisible(status);
 
   // Evidence, and short-lived URLs to look at it. The bucket is private, so these are
@@ -80,6 +80,17 @@ export default async function OrderDetail({
   // sitting beside it.
   const mayCaptureProof =
     !proof && status === "en_route" && can(membership.role, "orders:update:assigned");
+
+  // When proof is being asked for, CAPTURE is how a delivery completes — so the bare
+  // "Delivered" button is withdrawn rather than offered beside it. Two paths to the same
+  // state, one of which skips the evidence, is not a choice: it is the easy one winning
+  // on a wet doorstep, and proof of delivery is the thing the premium tier is sold on.
+  //
+  // Cancel and fail stay available. A job can still go wrong at the door, and refusing to
+  // record that is how operators end up editing the database by hand.
+  if (mayCaptureProof && isStorageConfigured()) {
+    forward = forward.filter((m) => m !== "delivered");
+  }
 
   return (
     <>
@@ -213,77 +224,6 @@ export default async function OrderDetail({
               </p>
             </section>
 
-            {/* PROOF OF DELIVERY — the evidence panel.
-                Rendered for every closed job, including when nothing was captured: a job
-                marked delivered with no proof is a fact worth showing, not a section to
-                hide. Silence there would read as "no problem" rather than "no evidence". */}
-            {proof || mayCaptureProof || status === "delivered" ? (
-              <section className="panel">
-                <h2 className="panel-title">Proof of delivery</h2>
-
-                {proof ? (
-                  <>
-                    <ul className="status-list">
-                      {proof.recipientName ? (
-                        <li>
-                          <span className="k">Received by</span>
-                          <span className="v">{proof.recipientName}</span>
-                        </li>
-                      ) : null}
-                      <li>
-                        <span className="k">Captured</span>
-                        <span className="v">
-                          {proof.capturedAt.toISOString().replace("T", " ").slice(0, 16)}
-                        </span>
-                      </li>
-                      {proof.capturedLat && proof.capturedLng ? (
-                        <li>
-                          <span className="k">Location</span>
-                          <span className="v">
-                            {proof.capturedLat}, {proof.capturedLng}
-                            {proof.capturedAccuracyM ? ` ±${proof.capturedAccuracyM}m` : ""}
-                          </span>
-                        </li>
-                      ) : null}
-                    </ul>
-
-                    <div className="proof-media">
-                      {proofSignatureUrl ? (
-                        <figure>
-                          <img src={proofSignatureUrl} alt="Recipient signature" />
-                          <figcaption>Signature</figcaption>
-                        </figure>
-                      ) : null}
-                      {proofPhotoUrl ? (
-                        <figure>
-                          <img src={proofPhotoUrl} alt="Proof of delivery photograph" />
-                          <figcaption>Photo</figcaption>
-                        </figure>
-                      ) : null}
-                    </div>
-
-                    <p className="hint">
-                      Stored privately. These links are signed and expire — reload the page
-                      to view them again.
-                    </p>
-                  </>
-                ) : mayCaptureProof ? (
-                  isStorageConfigured() ? (
-                    <ProofCapture tenantId={tenantId} orderId={orderId} action={recordProofAction} />
-                  ) : (
-                    <p className="hint">
-                      Proof cannot be captured: object storage is not configured on this
-                      environment.
-                    </p>
-                  )
-                ) : (
-                  <p className="hint">
-                    No proof of delivery was captured for this job.
-                  </p>
-                )}
-              </section>
-            ) : null}
-
             <section className="panel">
               <h2 className="panel-title">Move this job</h2>
               {moves.length === 0 ? (
@@ -364,6 +304,77 @@ export default async function OrderDetail({
               )}
             </section>
           </div>
+
+          {/* PROOF OF DELIVERY — the evidence panel.
+              Rendered for every closed job, including when nothing was captured: a job
+              marked delivered with no proof is a fact worth showing, not a section to
+              hide. Silence there would read as "no problem" rather than "no evidence". */}
+          {proof || mayCaptureProof || status === "delivered" ? (
+            <section className="panel">
+              <h2 className="panel-title">Proof of delivery</h2>
+
+              {proof ? (
+                <>
+                  <ul className="status-list">
+                    {proof.recipientName ? (
+                      <li>
+                        <span className="k">Received by</span>
+                        <span className="v">{proof.recipientName}</span>
+                      </li>
+                    ) : null}
+                    <li>
+                      <span className="k">Captured</span>
+                      <span className="v">
+                        {proof.capturedAt.toISOString().replace("T", " ").slice(0, 16)}
+                      </span>
+                    </li>
+                    {proof.capturedLat && proof.capturedLng ? (
+                      <li>
+                        <span className="k">Location</span>
+                        <span className="v">
+                          {proof.capturedLat}, {proof.capturedLng}
+                          {proof.capturedAccuracyM ? ` ±${proof.capturedAccuracyM}m` : ""}
+                        </span>
+                      </li>
+                    ) : null}
+                  </ul>
+
+                  <div className="proof-media">
+                    {proofSignatureUrl ? (
+                      <figure>
+                        <img src={proofSignatureUrl} alt="Recipient signature" />
+                        <figcaption>Signature</figcaption>
+                      </figure>
+                    ) : null}
+                    {proofPhotoUrl ? (
+                      <figure>
+                        <img src={proofPhotoUrl} alt="Proof of delivery photograph" />
+                        <figcaption>Photo</figcaption>
+                      </figure>
+                    ) : null}
+                  </div>
+
+                  <p className="hint">
+                    Stored privately. These links are signed and expire — reload the page
+                    to view them again.
+                  </p>
+                </>
+              ) : mayCaptureProof ? (
+                isStorageConfigured() ? (
+                  <ProofCapture tenantId={tenantId} orderId={orderId} action={recordProofAction} />
+                ) : (
+                  <p className="hint">
+                    Proof cannot be captured: object storage is not configured on this
+                    environment.
+                  </p>
+                )
+              ) : (
+                <p className="hint">
+                  No proof of delivery was captured for this job.
+                </p>
+              )}
+            </section>
+          ) : null}
 
           <section className="panel">
             <h2 className="panel-title">History</h2>

@@ -27,12 +27,14 @@ import {
   orderProofs,
   orders,
   tenants,
+  users,
   type Db,
 } from "@porterdirect/db";
 import {
   OrderValidationError,
   createOrder,
   findProof,
+  listOrders,
   findRedispatch,
   recordProof,
   redispatchOrder,
@@ -62,6 +64,10 @@ const RACERS = 8;
 suite("order invariants under real concurrency", () => {
   let db: Db;
   let tenantId = "";
+  // A REAL user row: `assigned_user_id` carries a foreign key, so a random id is rejected
+  // by the database rather than quietly stored. Worth having the constraint bite in a
+  // test rather than discovering it when a driver is assigned in production.
+  let driverId = "";
   const runId = randomUUID().slice(0, 8);
   // No user row is created: `actor_user_id` is nullable and every assertion here is about
   // orders. Fewer fixtures means fewer things to leak.
@@ -119,6 +125,13 @@ suite("order invariants under real concurrency", () => {
       })
       .returning({ id: tenants.id });
     tenantId = t!.id;
+
+    driverId = `drv-${runId}`;
+    await db.insert(users).values({
+      id: driverId,
+      name: `Race Driver ${runId}`,
+      email: `driver-${runId}@race-${runId}.test`,
+    });
   });
 
   afterAll(async () => {
@@ -128,6 +141,7 @@ suite("order invariants under real concurrency", () => {
     await db.delete(orderEvents).where(eq(orderEvents.tenantId, tenantId));
     await db.delete(orders).where(eq(orders.tenantId, tenantId));
     await db.delete(tenants).where(eq(tenants.id, tenantId));
+    if (driverId) await db.delete(users).where(eq(users.id, driverId));
   });
 
   it("re-dispatches a failed job exactly once under concurrent attempts", async () => {
@@ -205,6 +219,33 @@ suite("order invariants under real concurrency", () => {
     // "Order created", then exactly one "assigned". An append-only trail that records a
     // move twice is not a chain of custody.
     expect(events.filter((e) => e.to === "assigned")).toHaveLength(1);
+  });
+
+  it("shows a driver their own job even when it is not among the newest", async () => {
+    // The bug this exists for: the board fetched the most recent N rows and filtered to
+    // the driver AFTERWARDS, so on a busy tenant a driver whose job was older than the
+    // page limit saw an empty board. It read as "no work today", degraded as the operator
+    // grew, and no test could see it because every fixture had a handful of orders.
+    const driver = driverId;
+    const mine = await newJob();
+    await db.update(orders).set({ assignedUserId: driver }).where(eq(orders.id, mine));
+
+    // Bury it under newer work belonging to nobody.
+    for (let i = 0; i < 4; i++) await newJob();
+
+    // A page size that puts the driver's job out of reach of a fetch-then-filter.
+    const page = await listOrders(db, tenantId, { assignedTo: driver, limit: 2 });
+    expect(page.map((o) => o.id)).toContain(mine);
+    // And only theirs: narrowing must not widen.
+    expect(page.every((o) => o.assignedUserId === driver)).toBe(true);
+  });
+
+  it("still scopes by tenant when narrowing to a driver", async () => {
+    // The second predicate must ADD to the tenant one, never replace it.
+    const driver = driverId;
+    const mine = await newJob();
+    await db.update(orders).set({ assignedUserId: driver }).where(eq(orders.id, mine));
+    expect(await listOrders(db, randomUUID(), { assignedTo: driver })).toHaveLength(0);
   });
 
   it("records proof of delivery exactly once under concurrent capture", async () => {

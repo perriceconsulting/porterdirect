@@ -56,10 +56,13 @@ export default async function OrdersBoard({
   const { db, tenant, membership, userId } = ctx;
 
   const seesEverything = can(membership.role, "orders:read:all");
-  const all = await listOrders(db, tenantId);
-  // A driver's board is their own work only. Filtered here rather than in the query so
-  // the tenant scoping stays the single WHERE clause everything else relies on.
-  const visible = seesEverything ? all : all.filter((o) => o.assignedUserId === userId);
+  // A driver's board is their own work only, narrowed IN THE QUERY. Filtering after the
+  // fetch meant taking the most recent 50 rows and then discarding other drivers' — so on
+  // a busy tenant a driver whose job was not among the newest saw an empty board, and it
+  // read as "no work today" rather than as a bug.
+  const visible = await listOrders(db, tenantId, {
+    assignedTo: seesEverything ? undefined : userId,
+  });
 
   const live = visible.filter((o) => !isTerminal(o.status));
   const done = visible.filter((o) => isTerminal(o.status));
