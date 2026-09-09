@@ -217,7 +217,7 @@ export default async function OrdersBoard({
           {can(membership.role, "orders:create") ? (
             <section className="panel">
               <h2 className="panel-title">New job</h2>
-              <form action={createOrderAction} className="entry-form">
+              <form action={createOrderAction} className="entry-form form-paired">
                 <input type="hidden" name="tenantId" value={tenantId} />
 
                 {/* Grouped into the three things an operator is actually entering: who

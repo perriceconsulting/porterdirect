@@ -973,37 +973,48 @@ th.num {
  * read as unbalanced — the fix for one problem created another. Two short groups sit
  * side by side instead, so each field keeps a sensible measure AND the panel is filled.
  * A dispatcher entering jobs benefits twice: less dead space, less vertical travel.
+ *
+ * OPT-IN, via `.form-paired`, and that is the point. This grid is the DISPATCH form's
+ * arrangement — it names that form's own groups (`.group-customer`, `.group-route`,
+ * `.group-job`) and places them deliberately. While it hung off the structural
+ * `.entry-form`, the second form to use that class inherited a layout built for a
+ * different form: the rate card's two rate groups landed side by side at mismatched
+ * heights and its "Limits" group was orphaned in column one with dead space beside it.
+ *
+ * Same failure this file already carries a warning about — `.row-2` keeping one
+ * caller's `2fr 1fr` and silently skewing every other pair. A class named for STRUCTURE
+ * must not carry one caller's proportions.
  */
 @media (min-width: 900px) {
-  .entry-form {
+  .entry-form.form-paired {
     max-width: none;
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0 2.5rem;
     align-items: start;
   }
-  .entry-form .field-group {
+  .entry-form.form-paired .field-group {
     margin-bottom: 0;
   }
-  .group-customer {
+  .form-paired .group-customer {
     grid-column: 1;
   }
-  .group-route {
+  .form-paired .group-route {
     grid-column: 2;
   }
   /* Side by side, so the stacked layout's horizontal rule does not apply.
      `.field-group + .field-group` is (0,2,0) and would beat a bare `.group-route`
      (0,1,0) — the override has to match its weight or the rule stays and renders as a
      stray line beside the legend. */
-  .field-group.group-route {
+  .form-paired .field-group.group-route {
     border-top: none;
     padding-top: 0;
   }
-  .group-job {
+  .form-paired .group-job {
     grid-column: 1 / -1;
     margin-top: 1.6rem;
   }
-  .entry-form .form-actions {
+  .entry-form.form-paired .form-actions {
     grid-column: 1 / -1;
     margin-top: 1.6rem;
   }

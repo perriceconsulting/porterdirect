@@ -31,6 +31,9 @@ agencies) who run the physical work under their own brand + domain.
 | Authorization policy | [packages/auth/src/permissions.ts](packages/auth/src/permissions.ts) | The role→permission matrix; pure, exhaustive, no inheritance chain |
 | Proof-of-delivery storage | [apps/marketing/lib/storage.ts](apps/marketing/lib/storage.ts) | Neon S3-compatible, private bucket. Presigned both ways; keys persisted, URLs never |
 | Customer tracking link | [apps/marketing/app/t/[token]/page.tsx](apps/marketing/app/t/[token]/page.tsx) | The only surface with no login. Operator-branded; token is the whole authorization |
+| What a job COSTS | [packages/pricing/src/rate-card.ts](packages/pricing/src/rate-card.ts) | Pure. Distance is an ARGUMENT, so the money arithmetic is testable with no maps key. Refuses rather than guesses |
+| An operator's rate card (stored) | [apps/marketing/lib/rate-cards.ts](apps/marketing/lib/rate-cards.ts) | An INCOMPLETE card counts as absent — a missing type's row would read as `undefined.baseCents` |
+| Customer accounts | [packages/db/src/schema.ts](packages/db/src/schema.ts) | `tenant_customers`, deliberately NOT `tenant_members`. Customers hold no `Permission` |
 | Order lifecycle | [packages/orders/src/order-state.ts](packages/orders/src/order-state.ts) | Explicit transition table; terminal is terminal, no skipping, location bound to the order |
 | Order type/status vocabulary | [packages/orders/src/order-state.ts](packages/orders/src/order-state.ts) | `ORDER_TYPES`/`ORDER_STATUSES`, derived from the label records. The Postgres enum, the action validators and the board all derive; reconciled by `order-vocabulary.test.ts` |
 | Why a job ended | [packages/orders/src/closure.ts](packages/orders/src/closure.ts) | Closed reason sets; cancelled and failed are NOT the same list, and fault is three-valued |
@@ -245,6 +248,26 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
   quotes in a sales call, so it drifts where it does the most damage.
   `prd-reconciliation.test.ts` reads the real `CLAUDE.prd.md` and fails when the table and
   the catalogue disagree — verified by planting `$459` and watching it fail.
+- **A layout class named for its STRUCTURE must not carry one caller's proportions —
+  and this bit twice.** First `.row-2` kept a since-removed dropdown's `2fr 1fr`. Then
+  `.entry-form` carried the DISPATCH form's two-column grid, naming that form's own
+  groups; the second form to use the class (the rate card) inherited a layout built for
+  a different form — two rate groups side by side at mismatched heights and a "Limits"
+  group orphaned in column one with dead space beside it. Every test passed, including
+  ones measuring tap targets and horizontal scroll. Visible only in a screenshot. The
+  grid is now opt-in via `.form-paired`; `.entry-form` is neutral again.
+- **The e2e suite fails ONE test per full run, a DIFFERENT one each time, and every one
+  of them passes in isolation.** Three consecutive runs failed `auth-flows`, `pricing`
+  and `drive` — two of which had not been touched — and all three showed the same page
+  content: "Application error: a client-side exception has occurred". The pages involved
+  are server components with no client JavaScript of their own, so this is the Next DEV
+  SERVER compiling routes under concurrent load, not a product fault. Diagnosed, NOT
+  fixed. The obvious discriminator — run the suite against a production build — is
+  blocked by design: `PASSWORD_BREACH_SOURCE=fixture` throws under `NODE_ENV=production`,
+  which is the security seam working correctly and must not be weakened to chase a
+  flake. The real fix is a warm-up pass that compiles each route before the parallel
+  tests hit it, or fewer workers. Until then, read a single moving failure as the
+  harness and re-run; a failure that REPEATS in the same spec is a real one.
 - **Off-shift / post-delivery tracking** (driver app, later): location visibility is wired to
   shift/order status; continuing to track after off-shift is a legal liability, not a bug.
 - **Optimistic/offline updates that never reconcile** (driver app, later): every optimistic or
@@ -1369,3 +1392,70 @@ live-map reactivity.
     setting, and adding the column now — with no UI to change it — would repeat the
     `default_country` landmine exactly.
   - Ratchets: tests = **420** (was 415) + 10 PHAST + 47 e2e; client components = 3; lint = 0.
+
+- **2026-09-09 — Groundwork for customer self-booking: accounts, rate cards, and a price
+  that can be absent.**
+  - The question was "how does a customer create an order for pickup", and the honest
+    answer was that they cannot: `createOrderAction` is the only path and it sits behind
+    `orders:create`, so every job is typed in by an operator. Chosen shape: customer
+    accounts, per-tenant, with calculated pricing and payment settled off-platform.
+  - **A customer is a Better Auth user plus a `tenant_customers` row, NOT a
+    `tenant_members` row with a "customer" role.** That table is the staff authorization
+    matrix — every permission check resolves through it — so putting a self-registering
+    party inside it means every future permission has to remember to exclude them, and
+    the day one forgets is the day a customer reads the board. Customers hold no
+    `Permission` at all; the customer surfaces never consult the role matrix. Identity
+    stays global and the relationship is scoped, for the same reason membership is: a law
+    firm may hold accounts with two competing couriers.
+  - **`orders.price_cents` is nullable now, and the `default(0)` is gone.** A quote can
+    legitimately come back `needs_review` — nothing could geocode the address, no rate
+    card, beyond the operator's quotable range — and that job still has to reach the
+    board. Under the old column all of those arrived as **$0**, a plausible real price (a
+    free redelivery), so "nobody has priced this" and "this one is free" were the same
+    row. `driver_pay_cents` had been nullable for exactly this reason since it was added.
+    The typechecker found all four call sites, which is what extending `npm run typecheck`
+    to `apps/marketing` was for.
+  - **`@porterdirect/pricing` is pure — no database, no environment, no network.**
+    Distance is an ARGUMENT because the thing that measures a road is a paid third-party
+    service and the arithmetic that turns miles into money is ours; fusing them would
+    mean the price rules could only be tested with a live key, which is the shape the
+    HIBP breach check already cost this repo. Integer arithmetic throughout with one
+    final rounding, and the statute mile is exact — verified non-vacuously by planting a
+    rounded constant, which failed two tests.
+  - **A quote REFUSES rather than guesses.** Straight-line distance is systematically
+    short exactly in dense cities with rivers and one-way systems, so a "free" haversine
+    fallback would quietly undercharge on the operator's most valuable work. All three
+    refusals (`no_rate_card`, `distance_unknown`, `beyond_quotable_range`) degrade to a
+    job an operator prices by hand, so a geocoder outage costs a quote and never the job.
+    The quotable ceiling exists because an automatic quote is a price the operator is
+    BOUND to; without one the portal sells a run four states away.
+  - **An incomplete rate card counts as no card at all.** `Record<OrderType, TypeRate>`
+    is satisfied by an object missing a key — the same trap as the incomplete order-type
+    list — but here the consequence is `undefined.baseCents` inside a quote. Since
+    neon-http has no transactions, a half-finished save is exactly what leaves one
+    behind, as is adding a new order type. Verified by deleting a rate row.
+  - **Found in my own test while writing it:** the delete that simulates a half-saved
+    card was scoped by TYPE alone, so it would have removed that rate from every tenant's
+    card in the shared database. It passed either way only because no other card exists
+    yet. This is the loose-sweep landmine that once deleted a real user account.
+  - Rate card and customer-signup controls are in the console, not just columns: a
+    setting nobody can change is a hardcoded value in a configuration costume, which is
+    precisely how `default_country` gave every tenant US phone rules. `invite_only` is
+    the default because flipping an operator to open registration would silently let
+    strangers create real, priced work.
+  - **Rendering it caught what no test could:** the rate card inherited the dispatch
+    form's two-column grid off the structural `.entry-form` class. Now opt-in
+    (`.form-paired`), with the dispatch form's own layout confirmed unchanged by
+    screenshot. Recorded as a landmine — this is the second time a structurally-named
+    class carried one caller's proportions.
+  - **Reported, not fixed:** the e2e suite now fails one moving test per full run with a
+    client-side exception on server-rendered pages. Three runs, three different specs,
+    all passing in isolation. Diagnosed as the dev server compiling under concurrent
+    load; the production-build discriminator is blocked by the breach-source seam, which
+    is correct behaviour. Recorded as a landmine rather than papered over with a retry.
+  - Left alone (with reason): no geocoding or distance provider yet, so nothing can
+    actually quote — `quoteJob` is exercised with distances supplied by tests, and the
+    adapter is the next piece. The customer portal, customer invites and the booking form
+    do not exist yet; this slice is only what they stand on.
+  - Ratchets: tests = **458** (was 415) + 10 PHAST + **53 e2e** (was 47); client
+    components = 3; lint = 0; min-width:max-width media queries = 9:0.

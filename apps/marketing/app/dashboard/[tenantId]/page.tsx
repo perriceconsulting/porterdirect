@@ -20,6 +20,22 @@ import { invitableRoles } from "@porterdirect/auth";
 import { listTeam, requireConsole } from "../../../lib/console";
 import { listPendingInvitations } from "../../../lib/invitations";
 import { inviteMemberAction, revokeInvitationAction } from "./team-actions";
+import { ORDER_TYPES, TYPE_LABELS } from "@porterdirect/orders";
+import { loadRateCard, metresToMiles } from "../../../lib/rate-cards";
+import { saveRateCardAction, setCustomerSignupAction } from "./pricing-actions";
+
+/**
+ * Cents back to the dollars an operator typed, for a form default.
+ *
+ * NOT `formatUsdCents`: that produces "$8" for display, and a currency symbol in a text
+ * input is then re-parsed on the next save. This is the input's own round trip, so it
+ * must give back exactly what was typed — and it drops nothing, because "8" and "8.00"
+ * both parse to 800 but only one of them reads as a rate.
+ */
+function dollars(cents: number | undefined): string {
+  if (cents === undefined) return "";
+  return (cents / 100).toFixed(2);
+}
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +58,13 @@ export default async function Console({
   searchParams,
 }: {
   params: Promise<{ tenantId: string }>;
-  searchParams: Promise<{ error?: string; invited?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    invited?: string;
+    priceError?: string;
+    priced?: string;
+    signup?: string;
+  }>;
 }) {
   const { tenantId } = await params;
   const notice = await searchParams;
@@ -55,6 +77,10 @@ export default async function Console({
   const mayManage = can(membership.role, "members:manage");
   const pending = mayManage ? await listPendingInvitations(db, tenantId) : [];
   const grantable = invitableRoles(membership.role);
+  // Pricing is a settings decision, not a dispatch one — a dispatcher moves work, they
+  // do not set what the firm charges. Same permission the action re-checks.
+  const maySetPricing = can(membership.role, "tenant:settings");
+  const rateCard = maySetPricing ? await loadRateCard(db, tenantId) : null;
   const plan = subscription ? getPlan(subscription.planId) : null;
   const monthly =
     subscription && plan ? computeMonthlyTotalCents(plan.id, subscription.seatCount) : null;
@@ -270,6 +296,151 @@ export default async function Console({
               ) : null}
             </section>
           </div>
+
+          {maySetPricing ? (
+            <section className="panel">
+              <h2 className="panel-title">Pricing</h2>
+              <p className="sub">
+                What you charge, so a customer booking their own job can be quoted. Leave
+                this unset and every booking simply arrives unpriced for you to price by
+                hand — nothing breaks, you just do it yourself.
+              </p>
+
+              {notice.priceError ? (
+                <p className="error" role="alert">
+                  {notice.priceError}
+                </p>
+              ) : null}
+              {notice.priced ? (
+                <p className="notice" role="status">
+                  Rate card saved.
+                </p>
+              ) : null}
+
+              <form action={saveRateCardAction} className="entry-form">
+                <input type="hidden" name="tenantId" value={tenantId} />
+
+                {ORDER_TYPES.map((type) => (
+                  <fieldset className="field-group" key={type}>
+                    <legend>{TYPE_LABELS[type]}</legend>
+                    <div className="row-2">
+                      <div className="field">
+                        <label htmlFor={`${type}_base`}>Base fare</label>
+                        <input
+                          id={`${type}_base`}
+                          name={`${type}_base`}
+                          inputMode="decimal"
+                          placeholder="8.00"
+                          defaultValue={dollars(rateCard?.rates[type].baseCents)}
+                        />
+                        <span className="hint">Charged before a single mile.</span>
+                      </div>
+                      <div className="field">
+                        <label htmlFor={`${type}_perMile`}>Per mile</label>
+                        <input
+                          id={`${type}_perMile`}
+                          name={`${type}_perMile`}
+                          inputMode="decimal"
+                          placeholder="2.50"
+                          defaultValue={dollars(rateCard?.rates[type].perMileCents)}
+                        />
+                      </div>
+                    </div>
+                    <div className="row-2">
+                      <div className="field">
+                        <label htmlFor={`${type}_minimum`}>Minimum charge</label>
+                        <input
+                          id={`${type}_minimum`}
+                          name={`${type}_minimum`}
+                          inputMode="decimal"
+                          placeholder="15.00"
+                          defaultValue={dollars(rateCard?.rates[type].minimumCents)}
+                        />
+                        <span className="hint">
+                          The floor. A two-block run still costs you a driver and a van.
+                        </span>
+                      </div>
+                    </div>
+                  </fieldset>
+                ))}
+
+                <fieldset className="field-group">
+                  <legend>Limits</legend>
+                  <div className="row-2">
+                    <div className="field">
+                      <label htmlFor="driverPayPercent">Driver share</label>
+                      <input
+                        id="driverPayPercent"
+                        name="driverPayPercent"
+                        inputMode="numeric"
+                        placeholder="65"
+                        defaultValue={rateCard?.driverPayPercent ?? ""}
+                      />
+                      {/* Not optional. A job on the offer board with no pay cannot be
+                          accepted at all, so a quoted booking must arrive with one. */}
+                      <span className="hint">
+                        Whole percent of the price paid to the driver. This becomes the
+                        amount on their offer.
+                      </span>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="maxQuotableMiles">Quote up to</label>
+                      <input
+                        id="maxQuotableMiles"
+                        name="maxQuotableMiles"
+                        inputMode="decimal"
+                        placeholder="50"
+                        defaultValue={
+                          rateCard?.maxQuotableMeters ? metresToMiles(rateCard.maxQuotableMeters) : ""
+                        }
+                      />
+                      <span className="hint">
+                        Miles. Past this, a booking comes to you unpriced instead of being
+                        quoted — an automatic price is one you are bound to. Blank for no
+                        limit.
+                      </span>
+                    </div>
+                  </div>
+                </fieldset>
+
+                <div className="form-actions">
+                  <button className="btn btn-primary" type="submit">
+                    Save rate card
+                  </button>
+                </div>
+              </form>
+            </section>
+          ) : null}
+
+          {maySetPricing ? (
+            <section className="panel">
+              <h2 className="panel-title">Customer accounts</h2>
+              <p className="sub">
+                Customers with an account book their own jobs and watch them without
+                phoning you.
+              </p>
+              <form action={setCustomerSignupAction} className="entry-form">
+                <input type="hidden" name="tenantId" value={tenantId} />
+                <div className="field">
+                  <label htmlFor="mode">Who may open an account</label>
+                  <select id="mode" name="mode" defaultValue={tenant.customerSignup}>
+                    <option value="invite_only">Only firms I invite</option>
+                    <option value="open">Anyone who signs up</option>
+                  </select>
+                  <span className="hint">
+                    {tenant.customerSignup === "open"
+                      ? "Anyone can register and create real work on your board."
+                      : "Strangers cannot register. You invite the firms you already deal with."}
+                  </span>
+                </div>
+                <div className="form-actions">
+                  <button className="btn" type="submit">
+                    Save
+                  </button>
+                </div>
+              </form>
+            </section>
+          ) : null}
 
           <section className="panel">
             <h2 className="panel-title">Dispatch</h2>
