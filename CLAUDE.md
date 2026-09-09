@@ -1016,3 +1016,41 @@ live-map reactivity.
     the permission classifier — correctly, it destroys a live credential. The connection
     string is still exposed in this session's transcript and still needs rotating by hand.
   - Ratchets: tests = **360** (was 354) + 6 PHAST + 33 e2e; client components = 2; lint = 0.
+
+- **2026-09-09 — Live on porterdirect.com; Stripe compliance audited end to end.**
+  - **The production webhook endpoint did not exist.** Zero endpoints were registered on
+    the account, and the `STRIPE_WEBHOOK_SECRET` in `.env.local` was the one `stripe
+    listen` derives for a LOCALHOST forwarder. A real checkout would have succeeded at
+    Stripe and the tenant would never have activated, because nothing told the app. This
+    is the "per account AND per endpoint" landmine arriving exactly as described: not a
+    visibly broken checkout, but silence.
+  - Endpoint created for `https://porterdirect.com/api/stripe/webhook`, registering only
+    the three events the app actually handles rather than a wildcard — an endpoint
+    subscribed to events nothing consumes generates retries for messages we will never
+    act on, and buries the ones that matter.
+  - **Verified end to end against the live endpoint**, not asserted:
+    - unsigned → **400** (Stripe does not retry; a forgery never becomes valid)
+    - forged signature → **400**, with the real verification error in the log
+    - `GET` → **405**
+    - a genuine `stripe trigger` event → signature **accepted**, routed, and then
+      correctly refused with `no line item matching a known plan Price` and a **500** so
+      Stripe retries — because the fixture subscription uses a throwaway Price, not one
+      from our catalogue. Two retry attempts observed. That is the contract working.
+  - **A 500 on a forged signature was found and traced.** It was the "not configured"
+    branch: the deployment serving the domain predated the secret being set. Worth
+    recording because the symptom pointed at the wrong layer — the route's error handling
+    was correct all along, the environment was stale. Redeploy after setting an env var;
+    Vercel reads them at build time.
+  - **Stripe Tax is `pending`, missing `head_office`, with 0 registrations.** So
+    `STRIPE_AUTOMATIC_TAX=false` is not a lazy default — it is the only correct value
+    today, and `provisioning.ts` refuses to run a LIVE key while it is false. The
+    compliance gate is mechanical: real money cannot be taken until tax is configured.
+  - Production runs **test-mode keys** (`rk_test_`), so nothing charges anyone yet. Said
+    plainly because a deployed site on a real domain invites the assumption otherwise.
+  - PCI position unchanged and worth restating: card data never touches this app. Stripe
+    Checkout is hosted, and the billing portal is Stripe's — which is why neither was
+    rebuilt.
+  - Also: `BETTER_AUTH_URL` moved from the generated `vercel.app` URL to the apex, since
+    it is both the auth callback origin and the base for links in outbound email; and
+    `www` now 308s to the apex, in `next.config` rather than dashboard state.
+  - Ratchets unchanged: tests = 360 + 6 PHAST + 33 e2e; client components = 2; lint = 0.
