@@ -248,6 +248,21 @@ export default async function OrdersBoard({
                     country={tenant.defaultCountry as CountryCode}
                     hint="How this customer is identified — two people can share a name."
                   />
+
+                  <div className="field">
+                    <label htmlFor="customerEmail">Email (optional)</label>
+                    <input
+                      id="customerEmail"
+                      name="customerEmail"
+                      type="email"
+                      autoComplete="off"
+                      placeholder="name@example.com"
+                    />
+                    <span className="hint">
+                      Where the delivery receipt goes. Leave blank for a phone booking —
+                      the job works either way.
+                    </span>
+                  </div>
                 </fieldset>
 
                 <AddressFields

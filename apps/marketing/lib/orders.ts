@@ -27,6 +27,7 @@ import {
   type OrderStatus,
   type OrderType,
 } from "@porterdirect/orders";
+import { looksLikeEmail } from "./delivery-receipt";
 import {
   addressLabels,
   missingAddressParts,
@@ -42,6 +43,8 @@ export interface CreateOrderInput {
   readonly customerFirstName: string;
   readonly customerLastName: string;
   readonly customerPhone?: string;
+  /** Where the delivery receipt goes. Optional: plenty of work is booked by phone. */
+  readonly customerEmail?: string;
   /** The tenant's country, used to read a nationally-formatted number. */
   readonly country: CountryCode;
   readonly pickup: Address;
@@ -111,6 +114,10 @@ export async function createOrder(db: Db, input: CreateOrderInput): Promise<Orde
     throw new OrderValidationError("Price must be a whole number of cents, zero or more.");
   }
 
+  if (input.customerEmail?.trim() && !looksLikeEmail(input.customerEmail)) {
+    throw new OrderValidationError("That email address does not look right.");
+  }
+
   let normalizedPhone: string | null = null;
   if (input.customerPhone?.trim()) {
     const parsed = parsePhone(input.customerPhone, input.country);
@@ -140,6 +147,9 @@ export async function createOrder(db: Db, input: CreateOrderInput): Promise<Orde
           // Refused rather than stored raw when unparseable — this is the field a
           // driver dials.
           customerPhone: normalizedPhone,
+          // Stored as given. An address either routes or it does not, and lower-casing or
+          // stripping a `+tag` is exactly how the one that would have worked gets broken.
+          customerEmail: input.customerEmail?.trim() || null,
           pickupLine1: input.pickup.line1.trim(),
           pickupLine2: input.pickup.line2?.trim() || null,
           pickupCity: input.pickup.city.trim(),

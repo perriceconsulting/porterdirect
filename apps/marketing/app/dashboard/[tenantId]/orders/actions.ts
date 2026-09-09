@@ -19,11 +19,11 @@ import {
 } from "@porterdirect/orders";
 import { parseUsdToCents } from "@porterdirect/billing";
 import type { Address, CountryCode } from "@porterdirect/contact";
+import { completeDelivery } from "../../../../lib/complete-delivery";
 import { requireConsole } from "../../../../lib/console";
 import {
   OrderValidationError,
   createOrder,
-  recordProof,
   redispatchOrder,
   transitionOrder,
 } from "../../../../lib/orders";
@@ -82,6 +82,7 @@ export async function createOrderAction(data: FormData): Promise<void> {
       customerFirstName: field(data, "customerFirstName"),
       customerLastName: field(data, "customerLastName"),
       customerPhone: field(data, "customerPhone"),
+      customerEmail: field(data, "customerEmail") || undefined,
       country: tenant.defaultCountry as CountryCode,
       pickup: addressFrom(data, "pickup", tenant.defaultCountry),
       dropoff: addressFrom(data, "dropoff", tenant.defaultCountry),
@@ -188,15 +189,21 @@ export async function recordProofAction(formData: FormData): Promise<void> {
 
   try {
     // Re-authorized here, not inherited from whatever rendered the form.
-    const { db, membership, userId } = await requireConsole(tenantId, "orders:update:assigned");
+    const { db, tenant, subscription, userId } = await requireConsole(
+      tenantId,
+      "orders:update:assigned",
+    );
 
     const accuracyRaw = field(formData, "accuracyM");
     const accuracy = accuracyRaw ? Number.parseInt(accuracyRaw, 10) : NaN;
 
-    await recordProof(db, {
+    const { notice } = await completeDelivery(db, {
       tenantId,
       orderId,
-      capturedByUserId: userId,
+      actorUserId: userId,
+      operatorName: tenant.name,
+      subscription,
+      origin: process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
       recipientName: field(formData, "recipientName") || null,
       photoKey: field(formData, "photoKey") || null,
       signatureKey: field(formData, "signatureKey") || null,
@@ -205,18 +212,7 @@ export async function recordProofAction(formData: FormData): Promise<void> {
       accuracyM: Number.isFinite(accuracy) ? accuracy : null,
     });
 
-    try {
-      await transitionOrder(db, { tenantId, orderId, to: "delivered", actorUserId: userId });
-    } catch (err) {
-      if (isRedirectError(err)) throw err;
-      // The evidence is saved. An illegal transition here means the job was already
-      // closed by someone else — worth surfacing, but not worth discarding proof over.
-      if (!(err instanceof IllegalTransitionError) && !(err instanceof OrderValidationError)) {
-        throw err;
-      }
-      void membership;
-      redirect(`${base}?error=${encodeURIComponent(`Proof saved, but the job could not be marked delivered: ${err.message}`)}`);
-    }
+    if (notice) redirect(`${base}?error=${encodeURIComponent(notice)}`);
 
     revalidatePath(base);
     redirect(base);

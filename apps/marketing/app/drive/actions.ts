@@ -18,8 +18,9 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { isRedirectError } from "@porterdirect/auth";
 import { IllegalTransitionError, ORDER_STATUSES, type OrderStatus } from "@porterdirect/orders";
+import { completeDelivery } from "../../lib/complete-delivery";
 import { requireConsole } from "../../lib/console";
-import { OrderValidationError, recordProof, transitionOrder } from "../../lib/orders";
+import { OrderValidationError, transitionOrder } from "../../lib/orders";
 
 function field(data: FormData, key: string): string {
   const value = data.get(key);
@@ -66,15 +67,21 @@ export async function driveProofAction(formData: FormData): Promise<void> {
   const base = `/drive/${tenantId}/${orderId}`;
 
   try {
-    const { db, userId } = await requireConsole(tenantId, "orders:update:assigned");
+    const { db, tenant, subscription, userId } = await requireConsole(
+      tenantId,
+      "orders:update:assigned",
+    );
 
     const accuracyRaw = field(formData, "accuracyM");
     const accuracy = accuracyRaw ? Number.parseInt(accuracyRaw, 10) : NaN;
 
-    await recordProof(db, {
+    const { notice } = await completeDelivery(db, {
       tenantId,
       orderId,
-      capturedByUserId: userId,
+      actorUserId: userId,
+      operatorName: tenant.name,
+      subscription,
+      origin: process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
       recipientName: field(formData, "recipientName") || null,
       photoKey: field(formData, "photoKey") || null,
       signatureKey: field(formData, "signatureKey") || null,
@@ -83,19 +90,7 @@ export async function driveProofAction(formData: FormData): Promise<void> {
       accuracyM: Number.isFinite(accuracy) ? accuracy : null,
     });
 
-    try {
-      await transitionOrder(db, { tenantId, orderId, to: "delivered", actorUserId: userId });
-    } catch (err) {
-      if (isRedirectError(err)) throw err;
-      if (!(err instanceof IllegalTransitionError) && !(err instanceof OrderValidationError)) {
-        throw err;
-      }
-      // The evidence is saved; only the status move failed. Say so on the job rather than
-      // losing the capture.
-      redirect(
-        `${base}?error=${encodeURIComponent(`Proof saved, but the job could not be completed: ${err.message}`)}`,
-      );
-    }
+    if (notice) redirect(`${base}?error=${encodeURIComponent(notice)}`);
 
     revalidatePath(`/drive/${tenantId}`);
     redirect(`/drive/${tenantId}`);

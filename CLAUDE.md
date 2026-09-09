@@ -177,6 +177,13 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
   redirect — sent everyone to the console, so a driver's FIRST experience of the product
   was a dispatcher's screen. Four redirects each decided routing implicitly and all four
   chose the same wrong answer. `homePathForRole` is now the one place that decides.
+- **An anonymous document inside a branded envelope is not anonymous.** The delivery
+  certificate carries the operator's name and nothing of ours — and mail leaves from one
+  shared address, so a recipient who glances at the sender sees us. For the $199/$499
+  tiers that is cosmetic; those plans do not sell anonymity. For an Agency tenant it is a
+  line item, so `sendDeliveryReceipt` REFUSES to send on their behalf and says why, rather
+  than quietly undoing what they paid for. The real fix is a verified sending domain per
+  tenant, which is provisioning rather than code.
 - **Check-then-act idempotency.** Any "have we handled this?" followed by "mark handled"
   is a race: two concurrent deliveries both pass. Claim atomically (INSERT against a
   unique key) and release on a failed apply. Verified live — a check-then-act store
@@ -1202,3 +1209,32 @@ live-map reactivity.
     recording because the symptom pointed at the feature rather than the test.
   - Ratchets: tests = **386** (was 379) + **10 PHAST** (was 6) + **40 e2e** (was 39);
     client components = 3; lint = 0; min-width:max-width media queries = 9:0.
+
+- **2026-09-09 — The receipt reaches the customer, and the envelope tells the truth.**
+  - `orders.customer_email`, optional: plenty of courier work is booked by phone and the
+    sender never gives one. Refusing the job over a missing address would be the software
+    telling the operator how to run their business. Stored AS GIVEN — an address either
+    routes or it does not, and lower-casing or stripping a `+tag` is exactly how the one
+    that would have worked gets broken.
+  - The shape check is deliberately permissive: it catches a missing `@` and nothing more.
+    Every clever email regex is famous for rejecting somebody's real address, and the only
+    authority on whether an address exists is the server that accepts it.
+  - **The finding that shaped this slice: the certificate is anonymous and the ENVELOPE is
+    not.** Mail leaves from one shared address, so an Agency tenant's customer would see
+    our name at the exact moment their courier most needs to look like a standalone
+    business. `sendDeliveryReceipt` therefore checks `tenantAllows(sub,
+    "platform_anonymity")` and WITHHOLDS the send for those tenants, telling the operator
+    to send the certificate themselves. Shipping it anyway would have been quietly
+    breaking a line item somebody pays for.
+  - That is the capability system earning itself: the gate is one call, it lapses with the
+    subscription (a cancelled Agency tenant gets receipts again, asserted), and nothing
+    had to re-derive what the plan includes.
+  - `completeDelivery` is now ONE function both surfaces call, because the console and the
+    driver page were doing the same three steps and had begun to diverge. The order is the
+    part that matters and is identical on both: evidence, then status, then receipt. A
+    receipt failure never costs a delivery — the job is done, the email is a courtesy, and
+    an operator told "delivered, receipt not sent" can resend.
+  - The email LINKS the certificate rather than attaching it, so it resolves to the
+    current record. An attachment is a snapshot that keeps a corrected recipient name
+    wrong forever.
+  - Ratchets: tests = **410** (was 399) + 10 PHAST + 40 e2e; client components = 3; lint = 0.

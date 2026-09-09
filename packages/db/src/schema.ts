@@ -319,6 +319,17 @@ export const orders = pgTable(
 
     notes: text("notes"),
 
+    /**
+     * Where the delivery receipt goes. OPTIONAL: plenty of courier work is booked by
+     * phone and the sender never gives one, and refusing the job over a missing address
+     * would be the software telling the operator how to run their business.
+     *
+     * Not normalised the way a phone is. An address either routes or it does not, and
+     * lower-casing or stripping a `+tag` is exactly how you break the one that would
+     * have worked.
+     */
+    customerEmail: text("customer_email"),
+
     /** Agreed with the customer, in cents. The only amount a job carries. */
     priceCents: integer("price_cents").notNull().default(0),
 
