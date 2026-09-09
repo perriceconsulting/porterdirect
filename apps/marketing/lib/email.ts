@@ -29,8 +29,20 @@ export async function sendEmail(email: Email): Promise<void> {
       body: JSON.stringify({ from, to: [email.to], subject: email.subject, text: email.text }),
     });
     if (!res.ok) {
-      // Never log the body: provider errors can echo the recipient and the payload.
-      throw new Error(`Email provider rejected the message (HTTP ${res.status})`);
+      // Still never log the BODY — provider errors echo the recipient and the payload.
+      // But a bare status is undiagnosable: an unverified sending domain and a revoked
+      // key both arrive as 403, and those are a DNS problem and a credentials problem
+      // respectively. Resend puts a machine-readable `name` on the error
+      // ("validation_error", "missing_api_key"); that field carries no recipient and no
+      // message content, so it is safe to surface and turns a guess into a diagnosis.
+      let reason = "";
+      try {
+        const body = (await res.json()) as { name?: unknown };
+        if (typeof body.name === "string") reason = ` [${body.name}]`;
+      } catch {
+        // A non-JSON error body tells us nothing safe to repeat; the status stands alone.
+      }
+      throw new Error(`Email provider rejected the message (HTTP ${res.status})${reason}`);
     }
     return;
   }
