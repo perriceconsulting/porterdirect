@@ -59,3 +59,10 @@ secrets/
 *.rej
 *.swp
 *~
+
+.vercel
+# Vercel CLI appends `.env*`, which also shadows the tracked env CONTRACT. It stays
+# tracked because it holds no values — but an ignore rule that appears to cover it
+# invites someone to "helpfully" delete it, or to miss that it is the canonical contract.
+.env*
+!.env.example
