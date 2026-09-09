@@ -165,28 +165,40 @@ if (filled > 0) console.log(`  backfilled ${filled} tracking token(s)`);
 const [deliveredRow] = await db.select().from(orders).where(eq(orders.id, done.id));
 const token = deliveredRow?.publicToken ?? "";
 
+// Every job gets its links printed together, because the point of a demo is to follow
+// ONE delivery across all three surfaces. Printing a different job per surface — which
+// this script did first — makes them look out of sync when they simply are not the same
+// delivery.
+const rows = await db.select().from(orders).where(eq(orders.tenantId, tenantId));
+const byId = new Map(rows.map((r) => [r.id, r]));
+
+const line = (label: string, id: string, note: string) => {
+  const o = byId.get(id);
+  if (!o) return "";
+  return `
+  ${label}  —  ${o.reference}  (${o.status})
+    ${note}
+    office    ${BASE}/dashboard/${tenantId}/orders/${o.id}
+    driver    ${o.assignedUserId ? `${BASE}/drive/${tenantId}/${o.id}` : `${BASE}/drive/${tenantId}   (appears as an OFFER, not yet taken)`}
+    customer  ${o.publicToken ? `${BASE}/t/${o.publicToken}` : "(no tracking link)"}`;
+};
+
 console.log(`
 ────────────────────────────────────────────────────────────
   THE WALKTHROUGH — sign in as ${ownerEmail}
 ────────────────────────────────────────────────────────────
 
-1. THE OFFICE — dispatch board, all jobs, raise a new one
-   ${BASE}/dashboard/${tenantId}/orders
+  Boards:  office   ${BASE}/dashboard/${tenantId}/orders
+           driver   ${BASE}/drive/${tenantId}
 
-2. THE DRIVER — same person, phone-shaped. Open it narrow.
-   ${BASE}/drive/${tenantId}
-   Tap the job, then Navigate / Call, then capture proof:
-   ${BASE}/drive/${tenantId}/${enRoute.id}
+  THREE SEPARATE JOBS, each shown on all three surfaces. Pick ONE
+  and open its three links side by side — that is the same delivery
+  seen by the office, the driver and the customer.
+${line("A. OFFERED", waiting.id, "Unassigned and priced. The driver sees $41.00 with Accept / Decline.")}
+${line("B. OUT FOR DELIVERY", enRoute.id, "Taken. The driver can navigate, call, and capture proof.")}
+${line("C. DELIVERED", done.id, "Signed and photographed. The customer link shows the proof.")}
 
-3. THE CUSTOMER — no login. Open in a private window.
-   ${BASE}/t/${token}
-   Certificate (PDF):
-   ${BASE}/t/${token}/proof.pdf
-
-   The offer a driver sees ($41.00) is the WAITING job:
-   ${BASE}/dashboard/${tenantId}/orders/${waiting.id}
-
-Note: 1 and 2 need a session; 3 deliberately does not — that is
-the white-label surface, and it must open for a stranger.
+Note: office and driver need a session; the customer link deliberately
+does not — that is the white-label surface, and it must open for a stranger.
 ────────────────────────────────────────────────────────────
 `);
