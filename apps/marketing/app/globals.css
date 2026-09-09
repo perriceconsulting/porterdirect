@@ -1240,3 +1240,79 @@ input[aria-invalid="true"] {
   padding-top: 0.5rem;
   border-top: 1px solid var(--rule);
 }
+
+/* ---- Customer tracking page -------------------------------------------- */
+/* The one surface a tenant's CUSTOMER sees. Single column, phone-first, and carrying
+   the operator's identity rather than ours — there is deliberately no wordmark here. */
+.track {
+  max-width: 34rem;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+  display: grid;
+  gap: 1.1rem;
+}
+.track-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--rule);
+}
+.track-operator {
+  margin: 0;
+  font-family: var(--fs-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+.track-headline {
+  font-family: var(--fs-display);
+  font-size: clamp(1.6rem, 7vw, 2.2rem);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  margin: 0.5rem 0 0;
+  text-wrap: balance;
+}
+.track-detail {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 0.98rem;
+}
+.track-subhead {
+  font-family: var(--fs-display);
+  font-size: 1rem;
+  margin: 0;
+}
+.track-facts {
+  margin: 0.5rem 0 0;
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.1rem;
+  background: var(--surface-2);
+  border-radius: 6px;
+}
+.track-facts div { display: grid; gap: 0.2rem; }
+.track-facts dt {
+  font-family: var(--fs-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.track-facts dd { margin: 0; font-size: 0.98rem; display: grid; }
+.track-proof {
+  display: grid;
+  gap: 0.7rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--rule);
+}
+.track-actions { margin: 0.4rem 0 0; }
+.track-actions .btn { width: 100%; min-height: 52px; }
+.track-foot {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.85rem;
+  color: var(--ink-3);
+}

@@ -330,6 +330,22 @@ export const orders = pgTable(
      */
     customerEmail: text("customer_email"),
 
+    /**
+     * The customer's tracking link.
+     *
+     * Crypto-random and unguessable, and — unlike an invitation token — stored in the
+     * CLEAR on purpose. An invite is hashed because a database dump of raw invite tokens
+     * is a set of working keys to join tenants. This grants read of ONE order that the
+     * same dump already contains, so hashing would buy nothing and would cost the thing
+     * that matters: an operator re-sending a customer their link. A token you cannot read
+     * is a token you can only ever email once.
+     *
+     * NOT derived from the order id or the reference. A reference is read down a phone and
+     * ends up in inboxes and spreadsheets; deriving the link from it would make every
+     * delivery guessable from a scrap of paper.
+     */
+    publicToken: text("public_token"),
+
     /** Agreed with the customer, in cents. The only amount a job carries. */
     priceCents: integer("price_cents").notNull().default(0),
 
@@ -384,6 +400,9 @@ export const orders = pgTable(
      * Postgres treats NULLs as distinct, so the many not-re-dispatched orders do not
      * collide with each other; only a second re-dispatch OF THE SAME order does.
      */
+    // Unique so two orders can never share a link, and indexed because every tracking
+    // page load is a lookup by exactly this column.
+    publicTokenIdx: uniqueIndex("orders_public_token_idx").on(t.publicToken),
     redispatchIdx: uniqueIndex("orders_redispatch_idx").on(t.redispatchedFromOrderId),
   }),
 );

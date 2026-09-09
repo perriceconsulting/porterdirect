@@ -30,6 +30,7 @@ agencies) who run the physical work under their own brand + domain.
 | Env file reading | [scripts/lib/load-env.sh](scripts/lib/load-env.sh) | The only place a secrets file is read; parses as data, never sourced |
 | Authorization policy | [packages/auth/src/permissions.ts](packages/auth/src/permissions.ts) | The role→permission matrix; pure, exhaustive, no inheritance chain |
 | Proof-of-delivery storage | [apps/marketing/lib/storage.ts](apps/marketing/lib/storage.ts) | Neon S3-compatible, private bucket. Presigned both ways; keys persisted, URLs never |
+| Customer tracking link | [apps/marketing/app/t/[token]/page.tsx](apps/marketing/app/t/[token]/page.tsx) | The only surface with no login. Operator-branded; token is the whole authorization |
 | Order lifecycle | [packages/orders/src/order-state.ts](packages/orders/src/order-state.ts) | Explicit transition table; terminal is terminal, no skipping, location bound to the order |
 | Order type/status vocabulary | [packages/orders/src/order-state.ts](packages/orders/src/order-state.ts) | `ORDER_TYPES`/`ORDER_STATUSES`, derived from the label records. The Postgres enum, the action validators and the board all derive; reconciled by `order-vocabulary.test.ts` |
 | Why a job ended | [packages/orders/src/closure.ts](packages/orders/src/closure.ts) | Closed reason sets; cancelled and failed are NOT the same list, and fault is three-valued |
@@ -184,6 +185,15 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
   line item, so `sendDeliveryReceipt` REFUSES to send on their behalf and says why, rather
   than quietly undoing what they paid for. The real fix is a verified sending domain per
   tenant, which is provisioning rather than code.
+- **A nullable token column plus an empty lookup matches everything.** `public_token` is
+  nullable (orders predate it), so a query for `""` against `NULL` rows must be refused
+  BEFORE it reaches the database — otherwise `/t/` hands a stranger whichever pre-token
+  order the index returns first. `findOrderByPublicToken` returns null on a blank token,
+  and an e2e test visits `/t/%20` to prove it.
+- **A link only its sender can open is not a receipt.** The delivery-receipt email
+  originally pointed at the CONSOLE certificate route, which requires a session — the
+  customer was emailed a page that redirected them to a sign-in form for an account they
+  do not have. Anything sent to a tenant's customer must resolve without a login.
 - **Check-then-act idempotency.** Any "have we handled this?" followed by "mark handled"
   is a race: two concurrent deliveries both pass. Claim atomically (INSERT against a
   unique key) and release on a failed apply. Verified live — a check-then-act store
@@ -1238,3 +1248,36 @@ live-map reactivity.
     current record. An attachment is a snapshot that keeps a corrected recipient name
     wrong forever.
   - Ratchets: tests = **410** (was 399) + 10 PHAST + 40 e2e; client components = 3; lint = 0.
+
+- **2026-09-09 — The customer finally sees something: branded tracking.**
+  - Until now EVERY surface required a login. The person whose parcel it is — the one the
+    white-label promise is about — could see nothing. `/t/<token>` is the first page in
+    this product built for them, and the first place "run your fleet under your own brand"
+    is a thing rather than a sentence on a pricing page.
+  - **It caught a bug shipped an hour earlier.** The delivery receipt linked the CONSOLE
+    certificate route, which requires a session: customers were emailed a page that
+    redirected them to a sign-in form for an account they do not have. A link only its
+    sender can open is not a receipt. It now points at the tracking page.
+  - **The token is stored in the CLEAR, unlike an invitation token, and that is the
+    considered choice.** An invite is hashed because a dump of raw invite tokens is a set
+    of working keys to join tenants; this grants read of one order the same dump already
+    contains. Hashing would buy nothing and would cost the thing that matters — an
+    operator re-sending a customer their link. A token you cannot read is one you can only
+    ever email once.
+  - Generated with 24 crypto-random bytes, base64url. **Not a uuid**: a uuid is an
+    identifier, it reads like something safe to quote, and it ends up in logs and
+    referrers. Not derived from the reference either — a reference is read down a phone
+    and lives in inboxes and spreadsheets, so deriving the link from it would make every
+    delivery reachable from a scrap of paper.
+  - **What the page withholds is the design**: no price (a business arrangement between
+    the operator and whoever booked), no customer phone number, no pickup address, no
+    driver identity, nothing about the operator's other work. The token admits a stranger,
+    so anything extra is a leak with a public URL attached. The e2e asserts the absences.
+  - A wrong token, a malformed one and a blank one all answer identically. Distinguishing
+    them would make this an oracle for guessing links. `noindex` too: a delivery address
+    on a public URL has no business in a search index.
+  - **The nullable-column trap, found while writing it:** `public_token` is nullable
+    because orders predate it, so an empty lookup would match whichever pre-token row the
+    index returned first. Refused before it reaches the database, and `/t/%20` proves it.
+  - Ratchets: tests = **415** (was 410) + 10 PHAST + **46 e2e** (was 40); client
+    components = 3; lint = 0.

@@ -6,7 +6,8 @@
  * licensee's rows, and every check downstream then passes honestly against the wrong
  * data. If a function in this file does not take a tenant id, it is a bug.
  */
-import { and, desc, eq } from "drizzle-orm";
+import { randomBytes } from "node:crypto";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   isUniqueViolation,
   orderEvents,
@@ -77,6 +78,21 @@ function newReference(): string {
     out += REFERENCE_ALPHABET[Math.floor(Math.random() * REFERENCE_ALPHABET.length)];
   }
   return `ORD-${out}`;
+}
+
+/**
+ * The customer's tracking token.
+ *
+ * 24 bytes of CRYPTO randomness — not a uuid. A uuid is an identifier: it leaks a
+ * timestamp in v1, appears in logs and referrers, and reads like something safe to quote.
+ * This is the only thing standing between a stranger and one delivery's details, so it is
+ * generated the way a secret is.
+ *
+ * base64url so it survives being pasted into a URL, an SMS and a QR code without
+ * escaping — the three places it will actually live.
+ */
+export function newPublicToken(): string {
+  return randomBytes(24).toString("base64url");
 }
 
 export class OrderValidationError extends Error {
@@ -150,6 +166,9 @@ export async function createOrder(db: Db, input: CreateOrderInput): Promise<Orde
           // Stored as given. An address either routes or it does not, and lower-casing or
           // stripping a `+tag` is exactly how the one that would have worked gets broken.
           customerEmail: input.customerEmail?.trim() || null,
+          // Every job gets one at creation. Minting it later would mean a customer who
+          // asks "where is it?" before anyone thinks to generate a link cannot be told.
+          publicToken: newPublicToken(),
           pickupLine1: input.pickup.line1.trim(),
           pickupLine2: input.pickup.line2?.trim() || null,
           pickupCity: input.pickup.city.trim(),
@@ -429,6 +448,37 @@ export async function findProof(
     .where(and(eq(orderProofs.tenantId, tenantId), eq(orderProofs.orderId, orderId)))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * One order by its PUBLIC token — the customer's view.
+ *
+ * Not tenant-scoped, and that is not an oversight: the token IS the scope. A stranger
+ * holding it has no tenant id to supply, and requiring one would mean putting the tenant
+ * id in the URL, which tells a recipient more about the operator's account than the
+ * delivery they are asking about.
+ *
+ * The unique index makes one token resolve to at most one order, so there is no
+ * ambiguity to resolve in application code.
+ */
+export async function findOrderByPublicToken(db: Db, token: string): Promise<Order | null> {
+  // An empty token must never match a row whose column is NULL — that would hand every
+  // pre-token order to anyone who visited /t/.
+  if (!token.trim()) return null;
+  const [row] = await db.select().from(orders).where(eq(orders.publicToken, token)).limit(1);
+  return row ?? null;
+}
+
+/** Give orders created before tracking existed a token, so their links work too. */
+export async function backfillPublicTokens(db: Db, tenantId: string): Promise<number> {
+  const rows = await db
+    .select({ id: orders.id })
+    .from(orders)
+    .where(and(eq(orders.tenantId, tenantId), isNull(orders.publicToken)));
+  for (const row of rows) {
+    await db.update(orders).set({ publicToken: newPublicToken() }).where(eq(orders.id, row.id));
+  }
+  return rows.length;
 }
 
 /** Rebuild the pickup address from a row, for display. */

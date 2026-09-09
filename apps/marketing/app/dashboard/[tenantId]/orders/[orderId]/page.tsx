@@ -213,6 +213,19 @@ export default async function OrderDetail({
                 ) : null}
               </ul>
 
+              {/* The customer's link. Surfaced so an operator can send it by whatever
+                  channel they already use — SMS, WhatsApp, a phone call reading it out —
+                  rather than it existing only inside an automated email. */}
+              {order.publicToken ? (
+                <p className="hint" style={{ marginTop: "0.9rem" }}>
+                  Customer tracking link:{" "}
+                  <a href={`/t/${order.publicToken}`} target="_blank" rel="noopener">
+                    /t/{order.publicToken.slice(0, 10)}…
+                  </a>{" "}
+                  — shows {tenant.name}, never us.
+                </p>
+              ) : null}
+
               {/*
                 Stated explicitly because it is a legal position, not a UI detail: driver
                 location is tied to THIS order's status, and ends when the order does.

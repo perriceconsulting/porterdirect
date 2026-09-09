@@ -80,7 +80,12 @@ export async function completeDelivery(
     to: order?.customerEmail ?? null,
     operatorName: input.operatorName,
     reference: order?.reference ?? "",
-    certificateUrl: `${input.origin}/dashboard/${input.tenantId}/orders/${input.orderId}/proof.pdf`,
+    // The TRACKING link, not the console route. The console route requires a session, so
+    // the receipt previously emailed customers a page they could not open — a receipt
+    // only its sender can read is not a receipt.
+    certificateUrl: order?.publicToken
+      ? `${input.origin}/t/${order.publicToken}`
+      : `${input.origin}/dashboard/${input.tenantId}/orders/${input.orderId}/proof.pdf`,
     subscription: input.subscription,
   });
 
