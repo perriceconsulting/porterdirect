@@ -21,11 +21,20 @@ import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { createDbClient, orderEvents, orders, tenants, type Db } from "@porterdirect/db";
+import {
+  createDbClient,
+  orderEvents,
+  orderProofs,
+  orders,
+  tenants,
+  type Db,
+} from "@porterdirect/db";
 import {
   OrderValidationError,
   createOrder,
+  findProof,
   findRedispatch,
+  recordProof,
   redispatchOrder,
   transitionOrder,
 } from "../lib/orders";
@@ -115,6 +124,7 @@ suite("order invariants under real concurrency", () => {
   afterAll(async () => {
     if (!db || !tenantId) return;
     // Scoped to THIS run's tenant — the only thing this suite owns.
+    await db.delete(orderProofs).where(eq(orderProofs.tenantId, tenantId));
     await db.delete(orderEvents).where(eq(orderEvents.tenantId, tenantId));
     await db.delete(orders).where(eq(orders.tenantId, tenantId));
     await db.delete(tenants).where(eq(tenants.id, tenantId));
@@ -195,6 +205,66 @@ suite("order invariants under real concurrency", () => {
     // "Order created", then exactly one "assigned". An append-only trail that records a
     // move twice is not a chain of custody.
     expect(events.filter((e) => e.to === "assigned")).toHaveLength(1);
+  });
+
+  it("records proof of delivery exactly once under concurrent capture", async () => {
+    // A driver double-tapping at the door, or two devices on one job. Two proofs would
+    // raise "which one is the evidence?" at exactly the moment somebody disputes a
+    // delivery — so the unique index decides it, not a pre-check.
+    const id = await newJob();
+    for (const to of ["assigned", "en_route"] as const) {
+      await transitionOrder(db, { tenantId, orderId: id, to, actorUserId: ACTOR });
+    }
+
+    const results = await Promise.allSettled(
+      Array.from({ length: RACERS }, (_, i) =>
+        recordProof(db, {
+          tenantId,
+          orderId: id,
+          capturedByUserId: ACTOR,
+          recipientName: `Recipient ${i}`,
+          signatureKey: `tenants/${tenantId}/orders/${id}/signature-${i}.png`,
+        }),
+      ),
+    );
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const rows = await db.select().from(orderProofs).where(eq(orderProofs.orderId, id));
+    expect(rows).toHaveLength(1);
+
+    // And the loser is told why, rather than failing with a raw constraint error.
+    await expect(
+      recordProof(db, {
+        tenantId,
+        orderId: id,
+        capturedByUserId: ACTOR,
+        recipientName: "Later",
+      }),
+    ).rejects.toThrow(/already has proof/i);
+  });
+
+  it("refuses an empty proof", async () => {
+    // Evidence that proves nothing still LOOKS like evidence in a list, and only answers
+    // nothing once somebody opens it.
+    const id = await newJob();
+    await expect(
+      recordProof(db, { tenantId, orderId: id, capturedByUserId: ACTOR }),
+    ).rejects.toThrow(/signature, a photo, or the recipient/i);
+    expect(await findProof(db, tenantId, id)).toBeNull();
+  });
+
+  it("scopes proof reads by tenant, not just by order", async () => {
+    const id = await newJob();
+    await recordProof(db, {
+      tenantId,
+      orderId: id,
+      capturedByUserId: ACTOR,
+      recipientName: "Real Recipient",
+    });
+    expect(await findProof(db, tenantId, id)).not.toBeNull();
+    // A foreign tenant id must return nothing even with a VALID order id — the shape
+    // that leaks is fetching by order and checking the tenant afterwards.
+    expect(await findProof(db, randomUUID(), id)).toBeNull();
   });
 
   it("closes a job once, with one reason, under concurrent closures", async () => {

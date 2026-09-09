@@ -29,6 +29,7 @@ agencies) who run the physical work under their own brand + domain.
 | DB migrations | [packages/db/drizzle/](packages/db/drizzle/) | GENERATED from `schema.ts` via `npm run db:generate` — never hand-write DDL |
 | Env file reading | [scripts/lib/load-env.sh](scripts/lib/load-env.sh) | The only place a secrets file is read; parses as data, never sourced |
 | Authorization policy | [packages/auth/src/permissions.ts](packages/auth/src/permissions.ts) | The role→permission matrix; pure, exhaustive, no inheritance chain |
+| Proof-of-delivery storage | [apps/marketing/lib/storage.ts](apps/marketing/lib/storage.ts) | Neon S3-compatible, private bucket. Presigned both ways; keys persisted, URLs never |
 | Order lifecycle | [packages/orders/src/order-state.ts](packages/orders/src/order-state.ts) | Explicit transition table; terminal is terminal, no skipping, location bound to the order |
 | Order type/status vocabulary | [packages/orders/src/order-state.ts](packages/orders/src/order-state.ts) | `ORDER_TYPES`/`ORDER_STATUSES`, derived from the label records. The Postgres enum, the action validators and the board all derive; reconciled by `order-vocabulary.test.ts` |
 | Why a job ended | [packages/orders/src/closure.ts](packages/orders/src/closure.ts) | Closed reason sets; cancelled and failed are NOT the same list, and fault is three-valued |
@@ -159,6 +160,18 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
   largest body of code in the repo. `npm run typecheck` now covers `apps/marketing` too;
   adding it immediately surfaced three pre-existing errors, including a test file that
   passed under vitest and could never compile (Next types `process.env.NODE_ENV` readonly).
+- **A serverless request body caps around 4.5MB, and a phone photo exceeds it.** Proxying
+  proof-of-delivery uploads through a server action would fail on exactly the good
+  cameras — the worst possible failure curve for evidence, and invisible until a customer
+  disputes a delivery photographed on a decent phone. Uploads are PRESIGNED and go direct
+  from the device.
+- **Storing a URL instead of a key bakes in the bucket and the signing scheme.** Proof
+  rows hold object KEYS; the URL is derived at read time and expires. A permanent public
+  link to a delivery photo — which can show a doorway, a face, or a label with a
+  patient's name — is the leak, so the bucket is private and nothing ever returns one.
+- **`image/svg+xml` is an image to a person and a script host to a browser.** The upload
+  content type is an allowlist (jpeg/png/webp), never a denylist, because this decides
+  what can be written into a bucket the app serves back.
 - **Check-then-act idempotency.** Any "have we handled this?" followed by "mark handled"
   is a race: two concurrent deliveries both pass. Claim atomically (INSERT against a
   unique key) and release on a failed apply. Verified live — a check-then-act store
@@ -1054,3 +1067,45 @@ live-map reactivity.
     it is both the auth callback origin and the base for links in outbound email; and
     `www` now 308s to the apex, in `next.config` rather than dashboard state.
   - Ratchets unchanged: tests = 360 + 6 PHAST + 33 e2e; client components = 2; lint = 0.
+
+- **2026-09-09 — Proof of delivery: storage, capture, and the evidence panel.**
+  - **Neon object storage over a platform blob API**, for reasons that outlast
+    convenience: same vendor and region as the database (one BAA conversation rather than
+    two if the medical work lands, and no cross-region transfer on the largest objects in
+    the system), and the S3 API is portable — moving later is config, not a rewrite.
+    Bucket is **private**; a POD photo can show a face or a patient label.
+  - **Uploads are presigned and go direct from the device.** Not a preference: the
+    platform caps a serverless request body near 4.5MB and a full-resolution phone photo
+    exceeds that, so proxying would fail on the best cameras. The declared length is
+    SIGNED INTO the URL, so the size limit survives leaving our process.
+  - The photo is never resized or re-encoded. "Full resolution" is the requirement, and
+    compression is invisible until somebody needs to zoom in on the evidence.
+  - **`order_proofs` is its own table, not more nullable columns on `orders`.** Proof is a
+    different kind of record — evidence, captured once, by a named person, at a place and
+    time. Orders get edited; evidence should not. One proof per order, enforced by a
+    unique index rather than a pre-check, because two proofs raise "which one is the
+    evidence?" at exactly the moment somebody is disputing a delivery.
+  - Rows hold object KEYS, never URLs. A stored URL bakes in the bucket host and the
+    signing scheme, so a bucket move rewrites history; and a permanent link to a delivery
+    photo is the leak. Read URLs are signed per render and expire.
+  - **Capture and transition are separate steps, in that order.** Fusing them means a
+    failed transition discards a signature the recipient already gave — which cannot be
+    re-collected once the driver has left the door. Proof is recorded first; if the
+    transition then fails the evidence still stands and the operator is told why.
+  - **Location is a single point at handover, not a feed.** That is the legal distinction
+    already in this file, so it is plain columns on the proof row rather than a
+    rows-over-time table. A refused geolocation permission is not an error and never
+    blocks a delivery.
+  - **A job marked delivered with NO proof still renders the panel**, saying so. Hiding
+    the section would read as "no problem" rather than "no evidence".
+  - Third client component, and it earns it: a signature is drawn. `touch-action: none`
+    on the pad, because without it a drag scrolls the page and signing is impossible on
+    the device this is FOR.
+  - Lint caught the prop typed `=> void` for an action that returns a promise — the
+    component was claiming synchrony it did not have, and `busy` would have cleared
+    before the write landed.
+  - **Not yet verified end to end**: no storage credential exists yet, so presigning is
+    proven by unit test (local HMAC, no network) and the round trip is not. Said plainly
+    rather than implied — the code is written, the upload has never happened.
+  - Ratchets: tests = **377** (was 360) + 6 PHAST + 33 e2e; client components = **3**
+    (was 2, with reason); lint = 0; min-width:max-width media queries = 9:0.

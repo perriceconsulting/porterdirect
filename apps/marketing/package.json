@@ -9,15 +9,17 @@
     "start": "node --env-file-if-exists=../../.env.local ../../node_modules/next/dist/bin/next start -p 3000"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1128.0",
+    "@aws-sdk/s3-request-presigner": "3.1128.0",
+    "@porterdirect/auth": "*",
     "@porterdirect/billing": "*",
+    "@porterdirect/contact": "*",
     "@porterdirect/db": "*",
+    "@porterdirect/orders": "*",
     "next": "^15.1.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "stripe": "^17.4.0",
-    "@porterdirect/auth": "*",
-    "@porterdirect/orders": "*",
-    "@porterdirect/contact": "*"
+    "stripe": "^17.4.0"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",

@@ -23,16 +23,19 @@ import {
 } from "@porterdirect/orders";
 import { SiteHeader } from "../../../../_components/site-header";
 import { signOutAction } from "../../../../actions";
-import { redispatchOrderAction, transitionOrderAction } from "../actions";
+import { recordProofAction, redispatchOrderAction, transitionOrderAction } from "../actions";
 import { requireConsole } from "../../../../../lib/console";
 import {
   dropoffAddressOf,
   findOrder,
+  findProof,
   findRedispatch,
   findRedispatchOrigin,
   listOrderEvents,
   pickupAddressOf,
 } from "../../../../../lib/orders";
+import { isStorageConfigured, presignProofDownload } from "../../../../../lib/storage";
+import { ProofCapture } from "../../../../_components/proof-capture";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +67,19 @@ export default async function OrderDetail({
   const closers = moves.filter((m): m is "cancelled" | "failed" => m === "cancelled" || m === "failed");
   const forward = moves.filter((m) => m !== "cancelled" && m !== "failed");
   const tracking = isLocationVisible(status);
+
+  // Evidence, and short-lived URLs to look at it. The bucket is private, so these are
+  // signed per render and expire; a permanent link to a delivery photo is the leak.
+  const proof = await findProof(db, tenantId, orderId);
+  const proofPhotoUrl = proof?.photoKey ? await presignProofDownload(proof.photoKey) : null;
+  const proofSignatureUrl = proof?.signatureKey
+    ? await presignProofDownload(proof.signatureKey)
+    : null;
+  // Offered when the job is out for delivery and the driver may update it. Capture is
+  // how a delivery COMPLETES, so it replaces a bare "Delivered" button rather than
+  // sitting beside it.
+  const mayCaptureProof =
+    !proof && status === "en_route" && can(membership.role, "orders:update:assigned");
 
   return (
     <>
@@ -196,6 +212,77 @@ export default async function OrderDetail({
                   : "Driver location is not visible: this job is not live."}
               </p>
             </section>
+
+            {/* PROOF OF DELIVERY — the evidence panel.
+                Rendered for every closed job, including when nothing was captured: a job
+                marked delivered with no proof is a fact worth showing, not a section to
+                hide. Silence there would read as "no problem" rather than "no evidence". */}
+            {proof || mayCaptureProof || status === "delivered" ? (
+              <section className="panel">
+                <h2 className="panel-title">Proof of delivery</h2>
+
+                {proof ? (
+                  <>
+                    <ul className="status-list">
+                      {proof.recipientName ? (
+                        <li>
+                          <span className="k">Received by</span>
+                          <span className="v">{proof.recipientName}</span>
+                        </li>
+                      ) : null}
+                      <li>
+                        <span className="k">Captured</span>
+                        <span className="v">
+                          {proof.capturedAt.toISOString().replace("T", " ").slice(0, 16)}
+                        </span>
+                      </li>
+                      {proof.capturedLat && proof.capturedLng ? (
+                        <li>
+                          <span className="k">Location</span>
+                          <span className="v">
+                            {proof.capturedLat}, {proof.capturedLng}
+                            {proof.capturedAccuracyM ? ` ±${proof.capturedAccuracyM}m` : ""}
+                          </span>
+                        </li>
+                      ) : null}
+                    </ul>
+
+                    <div className="proof-media">
+                      {proofSignatureUrl ? (
+                        <figure>
+                          <img src={proofSignatureUrl} alt="Recipient signature" />
+                          <figcaption>Signature</figcaption>
+                        </figure>
+                      ) : null}
+                      {proofPhotoUrl ? (
+                        <figure>
+                          <img src={proofPhotoUrl} alt="Proof of delivery photograph" />
+                          <figcaption>Photo</figcaption>
+                        </figure>
+                      ) : null}
+                    </div>
+
+                    <p className="hint">
+                      Stored privately. These links are signed and expire — reload the page
+                      to view them again.
+                    </p>
+                  </>
+                ) : mayCaptureProof ? (
+                  isStorageConfigured() ? (
+                    <ProofCapture tenantId={tenantId} orderId={orderId} action={recordProofAction} />
+                  ) : (
+                    <p className="hint">
+                      Proof cannot be captured: object storage is not configured on this
+                      environment.
+                    </p>
+                  )
+                ) : (
+                  <p className="hint">
+                    No proof of delivery was captured for this job.
+                  </p>
+                )}
+              </section>
+            ) : null}
 
             <section className="panel">
               <h2 className="panel-title">Move this job</h2>

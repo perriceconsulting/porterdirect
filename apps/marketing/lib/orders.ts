@@ -10,10 +10,12 @@ import { and, desc, eq } from "drizzle-orm";
 import {
   isUniqueViolation,
   orderEvents,
+  orderProofs,
   orders,
   users,
   type Db,
   type Order,
+  type OrderProof,
 } from "@porterdirect/db";
 import {
   CLOSURE_REASON_LABELS,
@@ -328,6 +330,79 @@ export async function transitionOrder(
   });
 
   return updated;
+}
+
+/**
+ * Record proof of delivery.
+ *
+ * Deliberately does NOT transition the order. Capturing evidence and declaring the job
+ * delivered are two decisions, and fusing them means a failed transition throws away a
+ * signature the recipient already gave — which cannot be re-collected once the driver
+ * has left the door. Capture first, move second.
+ *
+ * One proof per order, enforced by a unique index rather than a pre-check: two proofs
+ * would raise "which one is the evidence?" at exactly the moment somebody is disputing
+ * a delivery. A second attempt is refused with the reason, not silently ignored.
+ */
+export async function recordProof(
+  db: Db,
+  args: {
+    tenantId: string;
+    orderId: string;
+    capturedByUserId: string | null;
+    recipientName?: string | null;
+    photoKey?: string | null;
+    signatureKey?: string | null;
+    lat?: string | null;
+    lng?: string | null;
+    accuracyM?: number | null;
+  },
+): Promise<OrderProof> {
+  const order = await findOrder(db, args.tenantId, args.orderId);
+  if (!order) throw new OrderValidationError("Order not found.");
+
+  if (!args.photoKey && !args.signatureKey && !args.recipientName?.trim()) {
+    // An empty proof is worse than none: it looks like evidence in a list and answers
+    // nothing when opened.
+    throw new OrderValidationError(
+      "Capture a signature, a photo, or the recipient's name before saving proof.",
+    );
+  }
+
+  try {
+    const [row] = await db
+      .insert(orderProofs)
+      .values({
+        tenantId: args.tenantId,
+        orderId: args.orderId,
+        capturedByUserId: args.capturedByUserId,
+        recipientName: args.recipientName?.trim() || null,
+        photoKey: args.photoKey ?? null,
+        signatureKey: args.signatureKey ?? null,
+        capturedLat: args.lat ?? null,
+        capturedLng: args.lng ?? null,
+        capturedAccuracyM: args.accuracyM ?? null,
+      })
+      .returning();
+    return row!;
+  } catch (err) {
+    if (!isUniqueViolation(err, "order_proofs_order_idx")) throw err;
+    throw new OrderValidationError("This job already has proof of delivery recorded.");
+  }
+}
+
+/** This order's proof, or null. Scoped by both ids in one predicate, like every read here. */
+export async function findProof(
+  db: Db,
+  tenantId: string,
+  orderId: string,
+): Promise<OrderProof | null> {
+  const [row] = await db
+    .select()
+    .from(orderProofs)
+    .where(and(eq(orderProofs.tenantId, tenantId), eq(orderProofs.orderId, orderId)))
+    .limit(1);
+  return row ?? null;
 }
 
 /** Rebuild the pickup address from a row, for display. */

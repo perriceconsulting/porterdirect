@@ -23,6 +23,7 @@ import { requireConsole } from "../../../../lib/console";
 import {
   OrderValidationError,
   createOrder,
+  recordProof,
   redispatchOrder,
   transitionOrder,
 } from "../../../../lib/orders";
@@ -165,4 +166,65 @@ export async function redispatchOrderAction(data: FormData): Promise<void> {
 
   revalidatePath(`/dashboard/${tenantId}/orders`);
   redirect(`/dashboard/${tenantId}/orders/${created.id}`);
+}
+
+/**
+ * Record proof of delivery, then move the job to delivered.
+ *
+ * In that order, and the order is the point. The signature and photo are already in
+ * storage by the time this runs — the client uploaded them direct — so what remains is
+ * writing the row and transitioning. If the transition were first and the row failed,
+ * a job would read "delivered" with no evidence behind it, which is precisely the claim
+ * the premium tier is sold on.
+ *
+ * The transition is attempted but NOT required to succeed for the proof to stand. A job
+ * already marked delivered by a dispatcher still gets its evidence recorded rather than
+ * the driver being told to go away.
+ */
+export async function recordProofAction(formData: FormData): Promise<void> {
+  const tenantId = field(formData, "tenantId");
+  const orderId = field(formData, "orderId");
+  const base = `/dashboard/${tenantId}/orders/${orderId}`;
+
+  try {
+    // Re-authorized here, not inherited from whatever rendered the form.
+    const { db, membership, userId } = await requireConsole(tenantId, "orders:update:assigned");
+
+    const accuracyRaw = field(formData, "accuracyM");
+    const accuracy = accuracyRaw ? Number.parseInt(accuracyRaw, 10) : NaN;
+
+    await recordProof(db, {
+      tenantId,
+      orderId,
+      capturedByUserId: userId,
+      recipientName: field(formData, "recipientName") || null,
+      photoKey: field(formData, "photoKey") || null,
+      signatureKey: field(formData, "signatureKey") || null,
+      lat: field(formData, "lat") || null,
+      lng: field(formData, "lng") || null,
+      accuracyM: Number.isFinite(accuracy) ? accuracy : null,
+    });
+
+    try {
+      await transitionOrder(db, { tenantId, orderId, to: "delivered", actorUserId: userId });
+    } catch (err) {
+      if (isRedirectError(err)) throw err;
+      // The evidence is saved. An illegal transition here means the job was already
+      // closed by someone else — worth surfacing, but not worth discarding proof over.
+      if (!(err instanceof IllegalTransitionError) && !(err instanceof OrderValidationError)) {
+        throw err;
+      }
+      void membership;
+      redirect(`${base}?error=${encodeURIComponent(`Proof saved, but the job could not be marked delivered: ${err.message}`)}`);
+    }
+
+    revalidatePath(base);
+    redirect(base);
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+    if (err instanceof OrderValidationError || err instanceof IllegalTransitionError) {
+      redirect(`${base}?error=${encodeURIComponent(err.message)}`);
+    }
+    throw err;
+  }
 }

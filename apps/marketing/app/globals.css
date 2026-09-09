@@ -1067,3 +1067,66 @@ input[aria-invalid="true"] {
 .close-form .form-actions {
   margin-top: 0.9rem;
 }
+
+/* ---- Proof of delivery ------------------------------------------------- */
+.proof {
+  display: grid;
+  gap: 1rem;
+}
+
+/* The signature pad. Sized in CSS but drawn at a fixed backing resolution, so the
+   exported PNG is the same on every device — evidence should not vary by phone. */
+.sig-pad {
+  width: 100%;
+  height: 180px;
+  background: var(--surface);
+  border: 1px dashed var(--rule);
+  border-radius: 4px;
+  /* Without this, a drag on the pad scrolls the page instead of drawing — which on a
+     phone makes signing impossible rather than merely awkward. */
+  touch-action: none;
+  cursor: crosshair;
+}
+.sig-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+
+.proof-media {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  margin-top: 1.1rem;
+}
+.proof-media figure {
+  margin: 0;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.proof-media img {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* Evidence is looked AT, not decorated: never crop it to fit a tidy box. */
+  object-fit: contain;
+  background: var(--surface-2);
+}
+.proof-media figcaption {
+  font-family: var(--fs-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding: 0.5rem 0.7rem;
+  border-top: 1px solid var(--rule-soft);
+}
+
+@media (min-width: 700px) {
+  .proof-media {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}

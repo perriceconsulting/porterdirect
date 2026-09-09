@@ -384,6 +384,61 @@ export const orders = pgTable(
  * delivered" but "who moved it, when, and from what". Append-only by convention — there
  * is deliberately no update path, because an editable audit log is not an audit log.
  */
+/**
+ * Proof of delivery — the evidence the premium tier is sold on.
+ *
+ * A separate table rather than more nullable columns on `orders`, because POD is a
+ * DIFFERENT KIND of record: it is evidence, captured once, by a named person, at a place
+ * and time. Orders get edited; evidence should not, and keeping it apart makes an
+ * append-only guarantee possible later without freezing the order row too.
+ *
+ * The image bytes live in object storage; these are KEYS, not URLs. Storing a URL would
+ * bake in the bucket host and the signing scheme, so a bucket move or a switch to signed
+ * access would rewrite every historical row. A key is stable; the URL is derived at read
+ * time and is short-lived by design, because a permanent public link to a delivery photo
+ * is the leak.
+ *
+ * Location is a SINGLE POINT captured at the moment of handover, not a tracking feed.
+ * That distinction is the legal one (CLAUDE.md: location visibility is bound to order
+ * status and ends when the order does) and it is why these are plain columns here rather
+ * than a rows-over-time table.
+ */
+export const orderProofs = pgTable(
+  "order_proofs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    /** Who took delivery, as given at the door. Free text on purpose — it is testimony. */
+    recipientName: text("recipient_name"),
+    /** Object-storage keys. Null when that piece was not captured. */
+    photoKey: text("photo_key"),
+    signatureKey: text("signature_key"),
+    /** Where the handover happened. Null when the device refused or lacked permission. */
+    capturedLat: text("captured_lat"),
+    capturedLng: text("captured_lng"),
+    /** Metres of uncertainty reported by the device; a fix with no accuracy is not evidence. */
+    capturedAccuracyM: integer("captured_accuracy_m"),
+    capturedByUserId: text("captured_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // One proof per order. A second would raise "which one is the evidence?" at exactly
+    // the moment somebody is disputing a delivery.
+    orderIdx: uniqueIndex("order_proofs_order_idx").on(t.orderId),
+    tenantIdx: index("order_proofs_tenant_idx").on(t.tenantId),
+  }),
+);
+
+export type OrderProof = typeof orderProofs.$inferSelect;
+export type NewOrderProof = typeof orderProofs.$inferInsert;
+
 export const orderEvents = pgTable(
   "order_events",
   {
