@@ -18,26 +18,39 @@ import { STATUS_LABELS, isTerminal, statusTone } from "@porterdirect/orders";
 import { formatAddressInline } from "@porterdirect/contact";
 import { SiteHeader } from "../../_components/site-header";
 import { signOutAction } from "../../actions";
+import { can } from "@porterdirect/auth";
 import { requireConsole } from "../../../lib/console";
-import { dropoffAddressOf, listOrders } from "../../../lib/orders";
+import { dropoffAddressOf, listClaimableOrders, listOrders } from "../../../lib/orders";
+import { claimOrderAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Drive — PorterDirect" };
 
 export default async function DriveBoard({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantId: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const { tenantId } = await params;
+  const { error } = await searchParams;
   // `orders:read:assigned` is held by every role, so this refuses only a non-member.
-  const { db, tenant, userId } = await requireConsole(tenantId, "orders:read:assigned");
+  const { db, tenant, membership, userId } = await requireConsole(tenantId, "orders:read:assigned");
 
   // Always narrowed to this person, in the query. Even an owner opening /drive is asking
   // "what am I carrying", not "what does my company have on".
   const mine = await listOrders(db, tenantId, { assignedTo: userId, limit: 100 });
   const live = mine.filter((o) => !isTerminal(o.status));
-  const doneToday = mine.filter((o) => isTerminal(o.status)).slice(0, 5);
+  // Two, not five. A driver mid-shift wants confirmation of what they just finished, not
+  // a history — and on a phone every finished row pushes the actual work further away.
+  const recentlyDone = mine.filter((o) => isTerminal(o.status)).slice(0, 2);
+
+  // Work nobody has taken. Shown ABOVE their own jobs only when they have none: a driver
+  // carrying a parcel should see the parcel first, not a list of other things to take on.
+  const claimable = can(membership.role, "orders:claim")
+    ? await listClaimableOrders(db, tenantId)
+    : [];
 
   if (!tenant) notFound();
 
@@ -64,9 +77,17 @@ export default async function DriveBoard({
               : `${live.length} jobs`}
         </h1>
 
+        {error ? (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        ) : null}
+
         {live.length === 0 ? (
           <p className="sub">
-            When a dispatcher assigns you a job it appears here. Nothing to do right now.
+            {claimable.length > 0
+              ? "Nothing assigned to you yet — take one of the jobs below."
+              : "When a dispatcher assigns you a job it appears here. Nothing to do right now."}
           </p>
         ) : (
           <ul className="drive-list">
@@ -93,11 +114,40 @@ export default async function DriveBoard({
           </ul>
         )}
 
-        {doneToday.length > 0 ? (
+        {claimable.length > 0 ? (
           <>
-            <h2 className="drive-subhead">Finished</h2>
+            <h2 className="drive-subhead">
+              Available {claimable.length > 1 ? `— ${claimable.length} jobs` : ""}
+            </h2>
+            <ul className="drive-list">
+              {claimable.map((o) => (
+                <li key={o.id}>
+                  <form action={claimOrderAction} className="drive-claim">
+                    <input type="hidden" name="tenantId" value={tenantId} />
+                    <input type="hidden" name="orderId" value={o.id} />
+                    <span className="drive-card-main">
+                      {formatAddressInline(dropoffAddressOf(o))}
+                    </span>
+                    <span className="drive-card-meta">
+                      <span className="mono">{o.reference}</span>
+                    </span>
+                    {/* A submit rather than a link: taking a job is a WRITE, and the
+                        claim resolves in the database so two drivers cannot both win. */}
+                    <button className="btn btn-primary drive-btn" type="submit">
+                      Take this job
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+
+        {recentlyDone.length > 0 ? (
+          <>
+            <h2 className="drive-subhead">Just finished</h2>
             <ul className="drive-list drive-list-quiet">
-              {doneToday.map((o) => (
+              {recentlyDone.map((o) => (
                 <li key={o.id}>
                   <a href={`/drive/${tenantId}/${o.id}`} className="drive-card">
                     <span className="drive-card-main">

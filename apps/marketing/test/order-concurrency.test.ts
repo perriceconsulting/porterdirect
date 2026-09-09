@@ -20,7 +20,7 @@
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import {
   createDbClient,
   orderEvents,
@@ -32,8 +32,10 @@ import {
 } from "@porterdirect/db";
 import {
   OrderValidationError,
+  claimOrder,
   createOrder,
   findProof,
+  listClaimableOrders,
   listOrders,
   findRedispatch,
   recordProof,
@@ -246,6 +248,83 @@ suite("order invariants under real concurrency", () => {
     const mine = await newJob();
     await db.update(orders).set({ assignedUserId: driver }).where(eq(orders.id, mine));
     expect(await listOrders(db, randomUUID(), { assignedTo: driver })).toHaveLength(0);
+  });
+
+  it("gives an unassigned job to exactly ONE of many drivers claiming at once", async () => {
+    // The risk the feature invites: a job appears in every driver's Available list, and
+    // several tap it in the same second. Two winners means two vans at one doorstep.
+    const id = await newJob();
+
+    const drivers = await Promise.all(
+      Array.from({ length: RACERS }, async (_, i) => {
+        const uid = `clm-${runId}-${i}`;
+        await db.insert(users).values({
+          id: uid,
+          name: `Claimer ${i}`,
+          email: `claimer-${i}-${runId}@race-${runId}.test`,
+        });
+        return uid;
+      }),
+    );
+
+    const results = await Promise.allSettled(
+      drivers.map((uid) => claimOrder(db, { tenantId, orderId: id, userId: uid })),
+    );
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((r) => r.status === "rejected")).toHaveLength(RACERS - 1);
+
+    // And the database agrees — one assignee, one audit line, not eight.
+    const [row] = await db.select().from(orders).where(eq(orders.id, id));
+    expect(row!.assignedUserId).toBeTruthy();
+    expect(row!.status).toBe("assigned");
+    const events = await db
+      .select({ to: orderEvents.toStatus, note: orderEvents.note })
+      .from(orderEvents)
+      .where(eq(orderEvents.orderId, id));
+    expect(events.filter((e) => e.note === "Claimed by driver")).toHaveLength(1);
+
+    await db.delete(users).where(inArray(users.id, drivers));
+  });
+
+  it("tells the losers something they can act on", async () => {
+    const id = await newJob();
+    const a = `lose-a-${runId}`;
+    const b = `lose-b-${runId}`;
+    for (const uid of [a, b]) {
+      await db.insert(users).values({
+        id: uid,
+        name: uid,
+        email: `${uid}@race-${runId}.test`,
+      });
+    }
+
+    await claimOrder(db, { tenantId, orderId: id, userId: a });
+    // One message for "someone took it", "it was cancelled" and "no such job": a driver
+    // acts on all three the same way, and distinguishing them would report on work they
+    // are not entitled to see.
+    await expect(claimOrder(db, { tenantId, orderId: id, userId: b })).rejects.toThrow(
+      /no longer available/i,
+    );
+    await db.delete(users).where(inArray(users.id, [a, b]));
+  });
+
+  it("offers only genuinely unclaimed work", async () => {
+    const free = await newJob();
+    const taken = await newJob();
+    await db.update(orders).set({ assignedUserId: driverId }).where(eq(orders.id, taken));
+
+    const claimable = await listClaimableOrders(db, tenantId);
+    const ids = claimable.map((o) => o.id);
+    expect(ids).toContain(free);
+    // Assigned-but-still-pending belongs to somebody. Listing it invites two people to
+    // the same doorstep.
+    expect(ids).not.toContain(taken);
+    expect(claimable.every((o) => o.status === "pending" && o.assignedUserId === null)).toBe(true);
+  });
+
+  it("never offers another tenant's unclaimed work", async () => {
+    expect(await listClaimableOrders(db, randomUUID())).toHaveLength(0);
   });
 
   it("records proof of delivery exactly once under concurrent capture", async () => {

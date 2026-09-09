@@ -31,6 +31,15 @@ export type Permission =
   | "tenant:settings"
   | "orders:create"
   | "orders:assign"
+  /**
+   * Take an UNASSIGNED job for yourself.
+   *
+   * Distinct from `orders:assign`, which is the power to direct OTHER people's work — a
+   * dispatcher deciding who goes where. Claiming is only ever reflexive: it can put a job
+   * on your own board and nobody else's. Collapsing the two would hand every driver the
+   * roster, which is exactly the escalation the matrix is written out longhand to prevent.
+   */
+  | "orders:claim"
   | "orders:read:all"
   | "orders:read:assigned"
   | "orders:update:assigned"
@@ -61,6 +70,7 @@ const MATRIX: Readonly<Record<TenantRole, readonly Permission[]>> = {
     "tenant:settings",
     "orders:create",
     "orders:assign",
+    "orders:claim",
     "orders:read:all",
     "orders:read:assigned",
     "orders:update:assigned",
@@ -71,6 +81,7 @@ const MATRIX: Readonly<Record<TenantRole, readonly Permission[]>> = {
     "members:read",
     "orders:create",
     "orders:assign",
+    "orders:claim",
     "orders:read:all",
     "orders:read:assigned",
     "orders:update:assigned",
@@ -78,7 +89,10 @@ const MATRIX: Readonly<Record<TenantRole, readonly Permission[]>> = {
   ],
   // A driver sees their own assigned work and nothing else. No fleet, no roster,
   // no other drivers' orders.
-  driver: ["orders:read:assigned", "orders:update:assigned"],
+  // A driver sees their own assigned work and nothing else — no fleet, no roster, no
+  // other drivers' orders. `orders:claim` does not widen that: it lets them PUT a job on
+  // their own board, never look at somebody else's.
+  driver: ["orders:read:assigned", "orders:update:assigned", "orders:claim"],
 };
 
 /** Does this role hold this permission? The single authorization predicate. */

@@ -1316,3 +1316,13 @@ input[aria-invalid="true"] {
   font-size: 0.85rem;
   color: var(--ink-3);
 }
+
+/* A claimable job is a form, not a link — taking one is a write. */
+.drive-claim {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}

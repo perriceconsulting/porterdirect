@@ -20,7 +20,7 @@ import { isRedirectError } from "@porterdirect/auth";
 import { IllegalTransitionError, ORDER_STATUSES, type OrderStatus } from "@porterdirect/orders";
 import { completeDelivery } from "../../lib/complete-delivery";
 import { requireConsole } from "../../lib/console";
-import { OrderValidationError, transitionOrder } from "../../lib/orders";
+import { OrderValidationError, claimOrder, transitionOrder } from "../../lib/orders";
 
 function field(data: FormData, key: string): string {
   const value = data.get(key);
@@ -98,6 +98,34 @@ export async function driveProofAction(formData: FormData): Promise<void> {
     if (isRedirectError(err)) throw err;
     if (err instanceof OrderValidationError || err instanceof IllegalTransitionError) {
       redirect(`${base}?error=${encodeURIComponent(err.message)}`);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Take an unassigned job.
+ *
+ * Authorized on `orders:claim`, which is deliberately NOT `orders:assign`. Assigning is
+ * directing other people's work; claiming is only ever reflexive — it can put a job on
+ * your own board and nobody else's. The action ignores any user id in the form and uses
+ * the SESSION's, so a posted body cannot assign a job to someone else.
+ */
+export async function claimOrderAction(formData: FormData): Promise<void> {
+  const tenantId = field(formData, "tenantId");
+  const orderId = field(formData, "orderId");
+
+  try {
+    const { db, userId } = await requireConsole(tenantId, "orders:claim");
+    await claimOrder(db, { tenantId, orderId, userId });
+
+    revalidatePath(`/drive/${tenantId}`);
+    // Straight to the job: a driver who just took work wants the address, not the list.
+    redirect(`/drive/${tenantId}/${orderId}`);
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+    if (err instanceof OrderValidationError || err instanceof IllegalTransitionError) {
+      redirect(`/drive/${tenantId}?error=${encodeURIComponent(err.message)}`);
     }
     throw err;
   }

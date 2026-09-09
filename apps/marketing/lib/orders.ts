@@ -481,6 +481,82 @@ export async function backfillPublicTokens(db: Db, tenantId: string): Promise<nu
   return rows.length;
 }
 
+/**
+ * Jobs nobody has taken yet — the pool a driver may claim from.
+ *
+ * Scoped by tenant in the WHERE clause like every read here, and narrowed to genuinely
+ * unclaimed work: `pending` AND no assignee. A job that is assigned but still pending
+ * belongs to somebody; showing it here would invite two people to the same doorstep.
+ */
+export async function listClaimableOrders(
+  db: Db,
+  tenantId: string,
+  limit = 25,
+): Promise<Order[]> {
+  return db
+    .select()
+    .from(orders)
+    .where(
+      and(
+        eq(orders.tenantId, tenantId),
+        eq(orders.status, "pending"),
+        isNull(orders.assignedUserId),
+      ),
+    )
+    // Oldest first: the job that has been waiting longest is the one that needs a driver.
+    // Newest-first would let old work rot at the bottom of a list nobody scrolls.
+    .orderBy(orders.createdAt)
+    .limit(limit);
+}
+
+/**
+ * Take an unassigned job.
+ *
+ * ONE atomic statement. The condition `assigned_user_id IS NULL AND status = 'pending'`
+ * lives in the WHERE clause, so two drivers tapping the same job at the same moment
+ * resolve in Postgres rather than in application code — the loser updates zero rows and
+ * is told, rather than both being sent to the same address.
+ *
+ * This repo has written the check-then-act version of this twice and been bitten both
+ * times. A SELECT to see whether it is free, followed by an UPDATE to take it, is exactly
+ * the shape that fails only under the concurrency this feature invites.
+ */
+export async function claimOrder(
+  db: Db,
+  args: { tenantId: string; orderId: string; userId: string },
+): Promise<Order> {
+  const [claimed] = await db
+    .update(orders)
+    .set({ assignedUserId: args.userId, status: "assigned", updatedAt: new Date() })
+    .where(
+      and(
+        eq(orders.tenantId, args.tenantId),
+        eq(orders.id, args.orderId),
+        eq(orders.status, "pending"),
+        isNull(orders.assignedUserId),
+      ),
+    )
+    .returning();
+
+  if (!claimed) {
+    // Deliberately one message for "someone else took it", "it was cancelled" and "no
+    // such job". A driver can act on all three the same way — go back and pick another —
+    // and distinguishing them would report on work they are not entitled to see.
+    throw new OrderValidationError("That job is no longer available. Someone else may have taken it.");
+  }
+
+  await db.insert(orderEvents).values({
+    tenantId: args.tenantId,
+    orderId: args.orderId,
+    actorUserId: args.userId,
+    fromStatus: "pending",
+    toStatus: "assigned",
+    note: "Claimed by driver",
+  });
+
+  return claimed;
+}
+
 /** Rebuild the pickup address from a row, for display. */
 export function pickupAddressOf(order: Order): Address {
   return {

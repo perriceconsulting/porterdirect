@@ -209,6 +209,11 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
 - **"Does our name appear" must be asked of the whole RESPONSE.** The e2e asserted against
   `innerText`, which cannot see an attribute or a `<meta>` tag, so it passed while both
   leaks above were live. On a white-label surface, assert on the HTML.
+- **"Claim" and "assign" are different powers.** `orders:claim` is REFLEXIVE — it can put
+  a job on your own board and nobody else's. `orders:assign` directs another person's day.
+  Collapsing them would hand every driver the roster, which is precisely the escalation
+  the permission matrix is written out longhand to prevent. The claim action ignores any
+  user id in the posted form and uses the session's.
 - **Check-then-act idempotency.** Any "have we handled this?" followed by "mark handled"
   is a race: two concurrent deliveries both pass. Claim atomically (INSERT against a
   unique key) and release on a failed apply. Verified live — a check-then-act store
@@ -1328,3 +1333,39 @@ live-map reactivity.
     the round trip is covered by the storage tests and was verified against the real
     bucket by hand.
   - Ratchets: tests = 415 + 10 PHAST + **47 e2e** (was 46); client components = 3; lint = 0.
+
+- **2026-09-09 — Drivers can take unclaimed work.**
+  - Asked whether the driver board should show "available" jobs, the honest answer was
+    that it meant two different things: hide the finished ones, or let a driver TAKE
+    unassigned work. Both were wanted, and only the second is a product change.
+  - Before this, an unassigned job was invisible to every driver — a dispatcher had to
+    assign every single one, so nothing moved unless somebody was at a desk. For an owner
+    with two vans that is the whole day's friction.
+  - **`orders:claim` is a new permission, deliberately not `orders:assign`.** Claiming is
+    reflexive: it puts a job on your own board and nobody else's. Assigning directs another
+    person's day. Collapsing them would hand every driver the roster — the exact escalation
+    the matrix is written longhand to prevent — so there is a test asserting that holding
+    claim does NOT bring assign or read:all.
+  - The existing driver-permission test FAILED when the grant was added, which is it doing
+    its job. Updated deliberately rather than made to pass, and the new assertion records
+    the decision.
+  - **`claimOrder` is one atomic statement.** The conditions `assigned_user_id IS NULL AND
+    status = 'pending'` live in the WHERE clause, so several drivers tapping the same job
+    resolve in Postgres: the losers update zero rows and are told. This repo has written
+    the check-then-act version twice and been bitten both times, and this feature actively
+    invites the race — the same job appears on every driver's screen at once.
+  - **Verified to fail**: planting the SELECT-then-UPDATE version fails the eight-driver
+    race test. Two winners would mean two vans at one doorstep.
+  - Losers get ONE message for "someone took it", "it was cancelled" and "no such job". A
+    driver acts on all three the same way, and distinguishing them would report on work
+    they are not entitled to see.
+  - Claimable work is oldest-first: the job waiting longest is the one that needs a driver.
+    Newest-first lets old work rot at the bottom of a list nobody scrolls.
+  - "Finished" dropped from five rows to two and renamed "Just finished". A driver
+    mid-shift wants confirmation of what they completed, not a history, and on a phone
+    every extra row pushes the actual work further down.
+  - **Left for a product decision, not built:** whether an operator can turn self-claiming
+    OFF. Some will not want drivers cherry-picking the easy runs. That is a per-tenant
+    setting, and adding the column now — with no UI to change it — would repeat the
+    `default_country` landmine exactly.
+  - Ratchets: tests = **420** (was 415) + 10 PHAST + 47 e2e; client components = 3; lint = 0.

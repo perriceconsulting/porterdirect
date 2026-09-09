@@ -60,8 +60,24 @@ describe("authorization matrix", () => {
         expect(can("driver", permission)).toBe(false);
       });
     }
-    it("allows only reading and updating their assigned orders", () => {
-      expect(permissionsFor("driver")).toEqual(["orders:read:assigned", "orders:update:assigned"]);
+    it("allows only their own assigned work, plus taking unclaimed work", () => {
+      // `orders:claim` was added deliberately, and this assertion is the record of that
+      // decision rather than a list that drifted. It is a REFLEXIVE grant: it can put a
+      // job on this driver's own board and nobody else's.
+      expect(permissionsFor("driver")).toEqual([
+        "orders:read:assigned",
+        "orders:update:assigned",
+        "orders:claim",
+      ]);
+    });
+
+    it("claiming does NOT bring the power to assign other people", () => {
+      // The escalation this separation exists to prevent. `orders:assign` directs someone
+      // else's day; collapsing the two would hand every driver the roster, which is
+      // exactly what the matrix is written out longhand to stop.
+      expect(can("driver", "orders:claim")).toBe(true);
+      expect(can("driver", "orders:assign")).toBe(false);
+      expect(can("driver", "orders:read:all")).toBe(false);
     });
   });
 
