@@ -21,6 +21,30 @@ const nextConfig = {
   // script only covered packages/ and never this app. The script now covers both, but
   // this remains the backstop and must stay loud.
 
+  /**
+   * One canonical host. `www` and the apex were both answering 200 with identical
+   * content, which is two URLs for every page — search engines pick a canonical
+   * themselves, split link equity while deciding, and may not pick the one you meant.
+   *
+   * Kept HERE rather than as a dashboard redirect so the rule is version-controlled and
+   * travels with the repo. Platform config that exists only in a web UI is invisible
+   * state: nobody reviews it, and nothing tells you when it changes.
+   *
+   * The apex is written literally rather than derived from BETTER_AUTH_URL, because that
+   * variable legitimately differs per environment — it is the vercel.app URL on a preview
+   * deployment — and a redirect keyed to it would send preview traffic to production.
+   */
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "www.porterdirect.com" }],
+        destination: "https://porterdirect.com/:path*",
+        permanent: true,
+      },
+    ];
+  },
+
   // Workspace packages ship raw TS (exports -> ./src/index.ts); Next must transpile them.
   transpilePackages: ["@porterdirect/billing", "@porterdirect/db", "@porterdirect/contact", "@porterdirect/orders", "@porterdirect/auth"],
 
