@@ -7,7 +7,6 @@
  */
 import { notFound } from "next/navigation";
 import { can } from "@porterdirect/auth";
-import { formatUsdCents } from "@porterdirect/billing";
 import { formatAddressLines, formatPhone, type CountryCode } from "@porterdirect/contact";
 import {
   CLOSURE_REASON_LABELS,
@@ -31,6 +30,7 @@ import {
   findProof,
   findRedispatch,
   findRedispatchOrigin,
+  formatOrderPrice,
   listOrderEvents,
   pickupAddressOf,
 } from "../../../../../lib/orders";
@@ -176,7 +176,7 @@ export default async function OrderDetail({
                 ) : null}
                 <li>
                   <span className="k">Price</span>
-                  <span className="v">{formatUsdCents(order.priceCents)}</span>
+                  <span className="v">{formatOrderPrice(order.priceCents)}</span>
                 </li>
                 {order.closureReason ? (
                   <li>

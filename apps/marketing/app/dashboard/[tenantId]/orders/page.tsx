@@ -7,7 +7,6 @@
  * enforceable rather than aspirational.
  */
 import { can } from "@porterdirect/auth";
-import { formatUsdCents } from "@porterdirect/billing";
 import {
   ORDER_TYPES,
   STATUS_LABELS,
@@ -24,7 +23,7 @@ import { AddressFields } from "../../../_components/address-fields";
 import { signOutAction } from "../../../actions";
 import { createOrderAction } from "./actions";
 import { requireConsole } from "../../../../lib/console";
-import { dropoffAddressOf, listOrders } from "../../../../lib/orders";
+import { dropoffAddressOf, formatOrderPrice, listOrders } from "../../../../lib/orders";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Dispatch — PorterDirect" };
@@ -164,7 +163,7 @@ export default async function OrdersBoard({
                             {STATUS_LABELS[o.status]}
                           </span>
                         </td>
-                        <td className="num">{formatUsdCents(o.priceCents)}</td>
+                        <td className="num">{formatOrderPrice(o.priceCents)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -206,7 +205,7 @@ export default async function OrdersBoard({
                             {STATUS_LABELS[o.status]}
                           </span>
                         </td>
-                        <td className="num">{formatUsdCents(o.priceCents)}</td>
+                        <td className="num">{formatOrderPrice(o.priceCents)}</td>
                       </tr>
                     ))}
                   </tbody>

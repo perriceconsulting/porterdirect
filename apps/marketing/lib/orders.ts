@@ -29,6 +29,7 @@ import {
   type OrderStatus,
   type OrderType,
 } from "@porterdirect/orders";
+import { formatUsdCents } from "@porterdirect/billing";
 import { looksLikeEmail } from "./delivery-receipt";
 import {
   addressLabels,
@@ -52,7 +53,12 @@ export interface CreateOrderInput {
   readonly pickup: Address;
   readonly dropoff: Address;
   readonly notes?: string;
-  readonly priceCents: number;
+  /**
+   * Null means NOT YET PRICED, which is a real state once customers book their own work:
+   * an address nothing could geocode, or a run beyond the operator's quotable range,
+   * still has to reach the board. It is distinct from zero, which is a job that is free.
+   */
+  readonly priceCents: number | null;
   /** What the driver is paid. The number on the offer they accept or refuse. */
   readonly driverPayCents?: number;
   /**
@@ -128,8 +134,10 @@ export async function createOrder(db: Db, input: CreateOrderInput): Promise<Orde
     // without a window puts a job on the board nobody can schedule against.
     throw new OrderValidationError("A scheduled courier job needs a date and time.");
   }
-  if (!Number.isInteger(input.priceCents) || input.priceCents < 0) {
+  if (input.priceCents !== null && (!Number.isInteger(input.priceCents) || input.priceCents < 0)) {
     // Money is integer cents. A float arriving here means one leaked in upstream.
+    // Null is allowed and means unpriced; it is checked FOR rather than falling through,
+    // so a `NaN` or a float can never reach the column by looking absent.
     throw new OrderValidationError("Price must be a whole number of cents, zero or more.");
   }
 
@@ -614,6 +622,21 @@ export function pickupAddressOf(order: Order): Address {
     postalCode: order.pickupPostalCode,
     country: order.pickupCountry,
   };
+}
+
+/**
+ * How a price reads when there is not one yet.
+ *
+ * One function, because three surfaces render this — the board, the order page and the
+ * closed-jobs table — and two places deciding one presentational question is precisely
+ * how `statusTone` came to paint failed deliveries success-green. The word is
+ * ACTIONABLE on purpose: "Needs pricing" tells a dispatcher there is something to do,
+ * where "—" or "$0.00" reads as a job that is simply cheap.
+ */
+export const UNPRICED_LABEL = "Needs pricing";
+
+export function formatOrderPrice(cents: number | null): string {
+  return cents === null ? UNPRICED_LABEL : formatUsdCents(cents);
 }
 
 /** Rebuild the drop-off address from a row, for display. */

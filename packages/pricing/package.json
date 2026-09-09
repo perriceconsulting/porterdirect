@@ -1,0 +1,9 @@
+{
+  "name": "@porterdirect/pricing",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "What a job costs: the operator's rate card, and the quote derived from it.",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc -b" }
+}

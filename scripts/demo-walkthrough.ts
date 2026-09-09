@@ -168,9 +168,6 @@ await transitionOrder(db, { tenantId, orderId: done.id, to: "delivered", actorUs
 const filled = await backfillPublicTokens(db, tenantId);
 if (filled > 0) console.log(`  backfilled ${filled} tracking token(s)`);
 
-const [deliveredRow] = await db.select().from(orders).where(eq(orders.id, done.id));
-const token = deliveredRow?.publicToken ?? "";
-
 // Every job gets its links printed together, because the point of a demo is to follow
 // ONE delivery across all three surfaces. Printing a different job per surface — which
 // this script did first — makes them look out of sync when they simply are not the same

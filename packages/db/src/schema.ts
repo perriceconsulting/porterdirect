@@ -22,6 +22,18 @@ import {
 } from "drizzle-orm/pg-core";
 import { ORDER_STATUSES, ORDER_TYPES } from "@porterdirect/orders";
 
+/**
+ * How a customer comes to hold an account with this operator.
+ *
+ * `invite_only` — the operator invites a firm they already deal with. `open` — anyone
+ * can register on the operator's own site and book.
+ *
+ * The default is `invite_only`, and that is a safety choice rather than a preference:
+ * flipping an existing operator to open registration would silently let strangers create
+ * real, priced work on their board. Widening access is a decision someone has to make.
+ */
+export const customerSignupMode = pgEnum("customer_signup_mode", ["invite_only", "open"]);
+
 /** A licensee: the operator who rents the platform (courier firm, dispatcher, agency). */
 export const tenants = pgTable(
   "tenants",
@@ -37,6 +49,14 @@ export const tenants = pgTable(
      * or a VPN, would otherwise silently change how their customers' numbers are read.
      */
     defaultCountry: text("default_country").notNull().default("US"),
+    /**
+     * Whether strangers may register as customers of this operator.
+     *
+     * There is a console control for this. A setting nobody can change is a hardcoded
+     * value wearing a configuration costume — which is exactly how `default_country`
+     * gave every tenant US phone rules without anything having decided that.
+     */
+    customerSignup: customerSignupMode("customer_signup").notNull().default("invite_only"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -207,6 +227,109 @@ export type NewTenantMember = typeof tenantMembers.$inferInsert;
 export type TenantRole = (typeof tenantRole.enumValues)[number];
 
 /* ===========================================================================
+ * Customer accounts — the people who BOOK the work, as opposed to run it.
+ * =========================================================================== */
+
+/**
+ * A customer account is deliberately NOT a `tenant_members` row with a "customer" role.
+ *
+ * That table is the staff authorization matrix: every permission check resolves through
+ * it, and `authorize()` reads a role out of it to decide what someone may do. Adding
+ * customers there would put an untrusted, self-registering party inside the structure
+ * that defends the operator's own data — so every future permission would have to
+ * remember to exclude them, and the day one forgets is the day a customer reads the
+ * board. The matrix is written out longhand precisely to stop that class of widening.
+ *
+ * Customers get their own relationship instead. They hold no `Permission` at all; what
+ * they may do is decided by the customer surfaces, which never consult the role matrix.
+ *
+ * Identity is still global (one Better Auth `user`), and the relationship is scoped per
+ * tenant — the same shape as membership, for the same reason: a law firm may hold
+ * accounts with two competing couriers, and those are two relationships, not two logins.
+ */
+export const customerAccountStatus = pgEnum("customer_account_status", ["active", "blocked"]);
+
+export const tenantCustomers = pgTable(
+  "tenant_customers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /**
+     * The business this account books for. Nullable: an individual booking their own
+     * deliveries is a real customer too, and forcing a company name would make them
+     * invent one.
+     */
+    companyName: text("company_name"),
+    /**
+     * E.164, like every other number here. Nullable because an invite carries only an
+     * email — the number is collected at the first booking, which is the first moment
+     * anyone actually needs to be able to ring them.
+     */
+    phone: text("phone"),
+    /**
+     * `blocked` is a deliberate third state between "has an account" and "deleted".
+     * Deleting the row would orphan the provenance on every job they ever booked;
+     * blocking stops new work while the history stays readable.
+     */
+    status: customerAccountStatus("status").notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // One account per (tenant, user), for the same reason membership is unique: two rows
+    // would give two answers to "is this person a customer here, and are they blocked".
+    uniqueAccount: uniqueIndex("tenant_customers_tenant_user_idx").on(t.tenantId, t.userId),
+    tenantIdx: index("tenant_customers_tenant_idx").on(t.tenantId),
+    userIdx: index("tenant_customers_user_idx").on(t.userId),
+  }),
+);
+
+/**
+ * An invitation to hold an ACCOUNT with this operator — not to join their staff.
+ *
+ * A separate table from `tenant_invitations` rather than a nullable `role` on that one.
+ * They grant genuinely different things, and the staff table's `role` is the column an
+ * authorization check reads: making it nullable would mean every read of it has to
+ * handle a null that means "not staff at all", inside the code path that decides
+ * privilege. The security-critical token handling is shared instead of the table.
+ */
+export const customerInvitations = pgTable(
+  "customer_invitations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    /** Bound to an address: accepting requires signing in as the person invited. */
+    email: text("email").notNull(),
+    companyName: text("company_name"),
+    /** SHA-256 of the token. The token itself exists only in the emailed link. */
+    tokenHash: text("token_hash").notNull(),
+    invitedByUserId: text("invited_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    tokenIdx: uniqueIndex("customer_invitations_token_idx").on(t.tokenHash),
+    tenantIdx: index("customer_invitations_tenant_idx").on(t.tenantId),
+    emailIdx: index("customer_invitations_email_idx").on(t.tenantId, t.email),
+  }),
+);
+
+export type TenantCustomer = typeof tenantCustomers.$inferSelect;
+export type NewTenantCustomer = typeof tenantCustomers.$inferInsert;
+export type CustomerAccountStatus = (typeof customerAccountStatus.enumValues)[number];
+export type CustomerInvitation = typeof customerInvitations.$inferSelect;
+export type NewCustomerInvitation = typeof customerInvitations.$inferInsert;
+
+/* ===========================================================================
  * Orders — the job itself.
  * =========================================================================== */
 
@@ -229,6 +352,72 @@ const asEnumValues = <T extends string>(values: readonly T[]): [T, ...T[]] =>
 export const orderType = pgEnum("order_type", asEnumValues(ORDER_TYPES));
 
 export const orderStatus = pgEnum("order_status", asEnumValues(ORDER_STATUSES));
+
+/* ===========================================================================
+ * The rate card — what the operator charges, so a booking can be quoted.
+ * =========================================================================== */
+
+/**
+ * The tenant-level half of a rate card. Its ABSENCE is meaningful: no row means this
+ * operator has not set prices, and `quoteJob` answers `needs_review` rather than
+ * inventing a number. That is why this is its own table rather than nullable columns on
+ * `tenants` — "no rate card" and "a rate card of zeroes" must not look the same.
+ *
+ * The arithmetic lives in `@porterdirect/pricing`; these rows are only the inputs.
+ */
+export const tenantRateCards = pgTable(
+  "tenant_rate_cards",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    /** Whole percent of the customer price paid to the driver. */
+    driverPayPercent: integer("driver_pay_percent").notNull(),
+    /**
+     * Beyond this, the portal stops quoting and hands the job to a person. Null means no
+     * ceiling. An automatic quote is a price the operator is BOUND to, so without this a
+     * customer types an address four states away and the portal sells a job nobody can run.
+     */
+    maxQuotableMeters: integer("max_quotable_meters"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // One card per tenant. Two would give two answers to what a job costs.
+    tenantIdx: uniqueIndex("tenant_rate_cards_tenant_idx").on(t.tenantId),
+  }),
+);
+
+/**
+ * The per-order-type rates. A row per type rather than columns per type, because
+ * columns would restate the order vocabulary in the schema — the "five copies" failure
+ * that cutting two order types already exposed. Adding a type adds rows, not DDL.
+ */
+export const tenantRateCardRates = pgTable(
+  "tenant_rate_card_rates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    rateCardId: uuid("rate_card_id")
+      .notNull()
+      .references(() => tenantRateCards.id, { onDelete: "cascade" }),
+    type: orderType("type").notNull(),
+    baseCents: integer("base_cents").notNull(),
+    perMileCents: integer("per_mile_cents").notNull(),
+    minimumCents: integer("minimum_cents").notNull(),
+  },
+  (t) => ({
+    // One rate per (card, type). A second row would make the price depend on which the
+    // query happened to return first.
+    cardTypeIdx: uniqueIndex("tenant_rate_card_rates_card_type_idx").on(t.rateCardId, t.type),
+  }),
+);
+
+export type TenantRateCard = typeof tenantRateCards.$inferSelect;
+export type NewTenantRateCard = typeof tenantRateCards.$inferInsert;
+export type TenantRateCardRate = typeof tenantRateCardRates.$inferSelect;
+export type NewTenantRateCardRate = typeof tenantRateCardRates.$inferInsert;
+
 
 /**
  * A job. Tenant-scoped like everything owned, and enum-typed on both `type` and
@@ -255,20 +444,6 @@ export const orders = pgTable(
     type: orderType("type").notNull(),
     status: orderStatus("status").notNull().default("pending"),
 
-    /**
-     * Structured, for the same reason the user table is: a single free-text name
-     * cannot tell two customers called John Smith apart, cannot be sorted by surname,
-     * and cannot address someone correctly in a notification.
-     *
-     * Unlike `users`, there is NO derived `customer_name` column here. That one exists
-     * only because Better Auth requires it; without an external constraint, storing a
-     * display name alongside its own two parts would be a second source of truth for
-     * the same fact. The display form is composed at the point of use.
-     *
-     * Deliberately NOT unique. Two different customers genuinely can share a name, and
-     * a uniqueness constraint would refuse the second one a delivery. What identifies a
-     * customer is their phone — which is also what masked calling keys off.
-     */
     /**
      * Structured, for the same reason the user table is: a single free-text name cannot
      * tell two customers called John Smith apart, cannot be sorted by surname, and
@@ -350,8 +525,41 @@ export const orders = pgTable(
      * What the CUSTOMER pays. The operator's revenue, and never shown to a driver: the
      * margin between this and `driverPayCents` is the operator's business, and exposing
      * it to everyone who declines an offer would hand every driver their rate card.
+     *
+     * NULLABLE, and the default of `0` was removed. Once a customer can book their own
+     * job, the quote can legitimately come back `needs_review` — an address nothing could
+     * geocode, no rate card, a run beyond the operator's quotable range — and that job
+     * still has to reach the board. Under the old column those all arrived as **$0**,
+     * which is a plausible real price (a free redelivery, a goodwill run), so "nobody has
+     * priced this yet" and "this one is free" were the same row. An operator would have
+     * had to notice the difference by memory.
+     *
+     * Same reasoning as `driverPayCents` below, which was nullable from the start for
+     * exactly this reason.
      */
-    priceCents: integer("price_cents").notNull().default(0),
+    priceCents: integer("price_cents"),
+
+    /**
+     * The customer account that booked this job, when one did.
+     *
+     * Null for the jobs an operator types in themselves, which is most of them and will
+     * stay that way — phone bookings are not going anywhere. Provenance rather than
+     * ownership: the customer named on the order is still `customer_first_name` and the
+     * rest, because the person who BOOKS and the person who RECEIVES are routinely
+     * different (a law firm booking a delivery to a court).
+     */
+    bookedByCustomerId: uuid("booked_by_customer_id").references(() => tenantCustomers.id, {
+      onDelete: "set null",
+    }),
+
+    /**
+     * The road distance the automatic quote was based on, when there was one.
+     *
+     * Kept because a price is a claim, and the first question about a disputed one is
+     * "how far did you think it was". Without it, a quote is a number with no working.
+     * Null on any job priced by hand.
+     */
+    quotedDistanceMeters: integer("quoted_distance_meters"),
 
     /**
      * What the DRIVER is paid for the job — the number on the offer they accept or refuse.
