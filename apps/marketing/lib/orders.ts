@@ -7,9 +7,10 @@
  * data. If a function in this file does not take a tenant id, it is a bug.
  */
 import { randomBytes } from "node:crypto";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, notInArray } from "drizzle-orm";
 import {
   isUniqueViolation,
+  orderDeclines,
   orderEvents,
   orderProofs,
   orders,
@@ -52,6 +53,8 @@ export interface CreateOrderInput {
   readonly dropoff: Address;
   readonly notes?: string;
   readonly priceCents: number;
+  /** What the driver is paid. The number on the offer they accept or refuse. */
+  readonly driverPayCents?: number;
   /**
    * Required for `scheduled_courier`. An exact time window IS the product for that type,
    * so an unscheduled "scheduled" job is a contradiction the board cannot act on.
@@ -183,6 +186,7 @@ export async function createOrder(db: Db, input: CreateOrderInput): Promise<Orde
           dropoffCountry: input.dropoff.country,
           notes: input.notes?.trim() || null,
           priceCents: input.priceCents,
+          driverPayCents: input.driverPayCents ?? null,
           scheduledFor: input.scheduledFor ?? null,
           redispatchedFromOrderId: input.redispatchedFromOrderId ?? null,
         })
@@ -488,25 +492,58 @@ export async function backfillPublicTokens(db: Db, tenantId: string): Promise<nu
  * unclaimed work: `pending` AND no assignee. A job that is assigned but still pending
  * belongs to somebody; showing it here would invite two people to the same doorstep.
  */
-export async function listClaimableOrders(
+export async function listOffersFor(
   db: Db,
   tenantId: string,
+  userId: string,
   limit = 25,
 ): Promise<Order[]> {
+  // Jobs this driver has already refused. Excluded so a decline MEANS something — without
+  // it a driver can only ignore an offer, and within a day the jobs they have already
+  // said no to crowd out the ones they might take.
+  const declined = await db
+    .select({ orderId: orderDeclines.orderId })
+    .from(orderDeclines)
+    .where(and(eq(orderDeclines.tenantId, tenantId), eq(orderDeclines.userId, userId)));
+  const declinedIds = declined.map((d) => d.orderId);
+
+  const base = and(
+    eq(orders.tenantId, tenantId),
+    eq(orders.status, "pending"),
+    isNull(orders.assignedUserId),
+  );
+
   return db
     .select()
     .from(orders)
-    .where(
-      and(
-        eq(orders.tenantId, tenantId),
-        eq(orders.status, "pending"),
-        isNull(orders.assignedUserId),
-      ),
-    )
+    .where(declinedIds.length > 0 ? and(base, notInArray(orders.id, declinedIds)) : base)
     // Oldest first: the job that has been waiting longest is the one that needs a driver.
     // Newest-first would let old work rot at the bottom of a list nobody scrolls.
     .orderBy(orders.createdAt)
     .limit(limit);
+}
+
+/**
+ * Refuse an offer.
+ *
+ * Hides the job from THIS driver and nobody else — a decline is one person's answer, not
+ * a verdict on the work. Idempotent by unique index: tapping twice is the same answer.
+ */
+export async function declineOrder(
+  db: Db,
+  args: { tenantId: string; orderId: string; userId: string; reason?: string },
+): Promise<void> {
+  try {
+    await db.insert(orderDeclines).values({
+      tenantId: args.tenantId,
+      orderId: args.orderId,
+      userId: args.userId,
+      reason: args.reason?.trim() || null,
+    });
+  } catch (err) {
+    // Already declined. Saying no twice is not an error worth showing anyone.
+    if (!isUniqueViolation(err, "order_declines_once_idx")) throw err;
+  }
 }
 
 /**
@@ -525,6 +562,16 @@ export async function claimOrder(
   db: Db,
   args: { tenantId: string; orderId: string; userId: string },
 ): Promise<Order> {
+  // An offer with no amount is not a choice. Refused here rather than rendered as a
+  // blank, because a driver accepting an unpriced job has agreed to something nobody
+  // has stated — and the argument about what it was worth happens after the work.
+  const offered = await findOrder(db, args.tenantId, args.orderId);
+  if (offered && offered.driverPayCents === null) {
+    throw new OrderValidationError(
+      "This job has no driver pay set. Ask the office to price it before accepting.",
+    );
+  }
+
   const [claimed] = await db
     .update(orders)
     .set({ assignedUserId: args.userId, status: "assigned", updatedAt: new Date() })

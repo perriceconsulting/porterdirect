@@ -294,7 +294,26 @@ export default async function OrdersBoard({
                     <div className="field">
                       <label htmlFor="price">Price</label>
                       <input id="price" name="price" inputMode="decimal" placeholder="49.50" />
-                      <span className="hint">In dollars, e.g. 49.50.</span>
+                      <span className="hint">In dollars, e.g. 49.50. What the customer pays.</span>
+                    </div>
+                  </div>
+
+                  <div className="row-2">
+                    <div className="field">
+                      <label htmlFor="driverPay">Driver pay</label>
+                      <input
+                        id="driverPay"
+                        name="driverPay"
+                        inputMode="decimal"
+                        placeholder="32.00"
+                      />
+                      {/* Two amounts, deliberately. The driver sees only this one — the
+                          margin between it and the price is the operator's business, and
+                          showing it to everyone who declines hands out the rate card. */}
+                      <span className="hint">
+                        The amount on the offer. A driver accepts or declines this, and
+                        never sees the customer price.
+                      </span>
                     </div>
                   </div>
 

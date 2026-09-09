@@ -77,7 +77,14 @@ const addr = (line1: string, city: string, region: string, postalCode: string) =
   country: "US",
 });
 
-const make = async (first: string, last: string, phone: string, email: string | undefined, price: number) =>
+const make = async (
+  first: string,
+  last: string,
+  phone: string,
+  email: string | undefined,
+  price: number,
+  driverPay: number,
+) =>
   createOrder(db, {
     tenantId,
     actorUserId: owner.id,
@@ -90,22 +97,24 @@ const make = async (first: string, last: string, phone: string, email: string | 
     pickup: addr("811 W 7th St", "Los Angeles", "CA", "90017"),
     dropoff: addr("1355 N Highland Ave", "Los Angeles", "CA", "90028"),
     priceCents: price,
+    driverPayCents: driverPay,
     notes: "Signature required — legal documents",
     scheduledFor: null,
   });
 
 // 1. Waiting for a driver.
-const waiting = await make("Devon", "Okafor", "2127363100", undefined, 6200);
+// Unassigned and PRICED — this is the one that appears as an offer to a driver.
+const waiting = await make("Devon", "Okafor", "2127363100", undefined, 6200, 4100);
 
 // 2. Out for delivery — this is the one the DRIVER surface acts on.
-const enRoute = await make("Marisol", "Vega", "2133734253", undefined, 4850);
+const enRoute = await make("Marisol", "Vega", "2133734253", undefined, 4850, 3200);
 await db.update(orders).set({ assignedUserId: owner.id }).where(eq(orders.id, enRoute.id));
 for (const to of ["assigned", "en_route"] as const) {
   await transitionOrder(db, { tenantId, orderId: enRoute.id, to, actorUserId: owner.id });
 }
 
 // 3. Delivered WITH evidence — the customer-facing tracking page and certificate.
-const done = await make("Grace", "Mbeki", "2133734253", ownerEmail, 5400);
+const done = await make("Grace", "Mbeki", "2133734253", ownerEmail, 5400, 3600);
 await db.update(orders).set({ assignedUserId: owner.id }).where(eq(orders.id, done.id));
 for (const to of ["assigned", "en_route"] as const) {
   await transitionOrder(db, { tenantId, orderId: done.id, to, actorUserId: owner.id });
@@ -174,7 +183,7 @@ console.log(`
    Certificate (PDF):
    ${BASE}/t/${token}/proof.pdf
 
-   Waiting job (office view):
+   The offer a driver sees ($41.00) is the WAITING job:
    ${BASE}/dashboard/${tenantId}/orders/${waiting.id}
 
 Note: 1 and 2 need a session; 3 deliberately does not — that is

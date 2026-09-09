@@ -1326,3 +1326,28 @@ input[aria-invalid="true"] {
   border: 1px solid var(--rule);
   border-radius: 6px;
 }
+
+/* An offer: the amount leads, because that is the question being answered. */
+.drive-offer {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+.drive-offer-pay {
+  font-family: var(--fs-display);
+  font-weight: 700;
+  font-size: 1.7rem;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.drive-offer-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem; /* >= 8px between adjacent targets */
+  margin-top: 0.4rem;
+}
+.drive-offer-actions form { display: grid; }

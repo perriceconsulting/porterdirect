@@ -346,8 +346,26 @@ export const orders = pgTable(
      */
     publicToken: text("public_token"),
 
-    /** Agreed with the customer, in cents. The only amount a job carries. */
+    /**
+     * What the CUSTOMER pays. The operator's revenue, and never shown to a driver: the
+     * margin between this and `driverPayCents` is the operator's business, and exposing
+     * it to everyone who declines an offer would hand every driver their rate card.
+     */
     priceCents: integer("price_cents").notNull().default(0),
+
+    /**
+     * What the DRIVER is paid for the job — the number on the offer they accept or refuse.
+     *
+     * A separate field rather than a percentage of `price_cents`, because a stored rate
+     * would be a second source of truth for a number the operator may set per job:
+     * a long run in bad weather is not priced off the same multiple as a five-minute
+     * hop, and the moment one job breaks the rule the derived version is a lie.
+     *
+     * Nullable: a job entered before a driver pay was set, or one the operator assigns
+     * directly rather than offering, does not have one. An offer without it is refused —
+     * "accept or decline" with no amount is not a choice.
+     */
+    driverPayCents: integer("driver_pay_cents"),
 
     /** The driver holding it. Null until assigned; a member of THIS tenant. */
     assignedUserId: text("assigned_user_id").references(() => users.id, {
@@ -468,6 +486,42 @@ export const orderProofs = pgTable(
 
 export type OrderProof = typeof orderProofs.$inferSelect;
 export type NewOrderProof = typeof orderProofs.$inferInsert;
+
+/**
+ * A driver saying no to an offer.
+ *
+ * Exists so "decline" means something. Without it a driver can only ignore a job, which
+ * leaves it on their screen forever and makes the offer list useless within a day — the
+ * jobs they have already refused crowd out the ones they might take.
+ *
+ * One row per (order, driver). The job stays available to EVERYONE ELSE: a decline is one
+ * person's answer, not a verdict on the work.
+ */
+export const orderDeclines = pgTable(
+  "order_declines",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Free text, optional. Why a driver refuses is worth knowing and not worth forcing. */
+    reason: text("reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // One answer per driver per job. A second decline is the same answer, not new data.
+    onceIdx: uniqueIndex("order_declines_once_idx").on(t.orderId, t.userId),
+    driverIdx: index("order_declines_driver_idx").on(t.userId),
+  }),
+);
+
+export type OrderDecline = typeof orderDeclines.$inferSelect;
 
 export const orderEvents = pgTable(
   "order_events",

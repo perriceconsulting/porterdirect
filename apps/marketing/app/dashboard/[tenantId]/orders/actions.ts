@@ -65,6 +65,15 @@ export async function createOrderAction(data: FormData): Promise<void> {
     redirect(`${base}?error=${encodeURIComponent("Enter a price like 49.50.")}`);
   }
 
+  // Optional: a job assigned directly does not need an offer amount. But a BLANK is
+  // different from a MALFORMED one — "3o.00" must be corrected, not silently treated as
+  // unpriced, or a driver is offered a job with no number on it.
+  const driverPayRaw = field(data, "driverPay");
+  const driverPayCents = driverPayRaw ? parseUsdToCents(driverPayRaw) : undefined;
+  if (driverPayRaw && driverPayCents === null) {
+    redirect(`${base}?error=${encodeURIComponent("Enter driver pay like 32.00.")}`);
+  }
+
   // datetime-local arrives as "2026-09-08T14:30" with no zone, so it is read in the
   // server's zone. A real deployment needs the TENANT's zone, which is not stored yet —
   // recorded here rather than silently assumed correct.
@@ -88,6 +97,7 @@ export async function createOrderAction(data: FormData): Promise<void> {
       dropoff: addressFrom(data, "dropoff", tenant.defaultCountry),
       notes: field(data, "notes"),
       priceCents,
+      driverPayCents: driverPayCents ?? undefined,
       scheduledFor,
     });
   } catch (err) {

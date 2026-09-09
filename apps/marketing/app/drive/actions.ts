@@ -20,7 +20,12 @@ import { isRedirectError } from "@porterdirect/auth";
 import { IllegalTransitionError, ORDER_STATUSES, type OrderStatus } from "@porterdirect/orders";
 import { completeDelivery } from "../../lib/complete-delivery";
 import { requireConsole } from "../../lib/console";
-import { OrderValidationError, claimOrder, transitionOrder } from "../../lib/orders";
+import {
+  OrderValidationError,
+  claimOrder,
+  declineOrder,
+  transitionOrder,
+} from "../../lib/orders";
 
 function field(data: FormData, key: string): string {
   const value = data.get(key);
@@ -125,6 +130,40 @@ export async function claimOrderAction(formData: FormData): Promise<void> {
   } catch (err) {
     if (isRedirectError(err)) throw err;
     if (err instanceof OrderValidationError || err instanceof IllegalTransitionError) {
+      redirect(`/drive/${tenantId}?error=${encodeURIComponent(err.message)}`);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Refuse an offer.
+ *
+ * Authorized on `orders:claim` — the same permission, because declining is the other half
+ * of the same decision. A driver who may take a job may also say no to it, and requiring
+ * a separate grant would produce the absurd state of being able to accept but not refuse.
+ *
+ * Hides the job from THIS driver only. It stays offered to everyone else: one person's
+ * no is not a verdict on the work.
+ */
+export async function declineOrderAction(formData: FormData): Promise<void> {
+  const tenantId = field(formData, "tenantId");
+  const orderId = field(formData, "orderId");
+
+  try {
+    const { db, userId } = await requireConsole(tenantId, "orders:claim");
+    await declineOrder(db, {
+      tenantId,
+      orderId,
+      userId,
+      reason: field(formData, "reason") || undefined,
+    });
+
+    revalidatePath(`/drive/${tenantId}`);
+    redirect(`/drive/${tenantId}`);
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+    if (err instanceof OrderValidationError) {
       redirect(`/drive/${tenantId}?error=${encodeURIComponent(err.message)}`);
     }
     throw err;

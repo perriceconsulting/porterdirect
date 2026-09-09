@@ -20,8 +20,9 @@ import { SiteHeader } from "../../_components/site-header";
 import { signOutAction } from "../../actions";
 import { can } from "@porterdirect/auth";
 import { requireConsole } from "../../../lib/console";
-import { dropoffAddressOf, listClaimableOrders, listOrders } from "../../../lib/orders";
-import { claimOrderAction } from "../actions";
+import { dropoffAddressOf, listOffersFor, listOrders } from "../../../lib/orders";
+import { claimOrderAction, declineOrderAction } from "../actions";
+import { formatUsdCents } from "@porterdirect/billing";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Drive — PorterDirect" };
@@ -48,8 +49,8 @@ export default async function DriveBoard({
 
   // Work nobody has taken. Shown ABOVE their own jobs only when they have none: a driver
   // carrying a parcel should see the parcel first, not a list of other things to take on.
-  const claimable = can(membership.role, "orders:claim")
-    ? await listClaimableOrders(db, tenantId)
+  const offers = can(membership.role, "orders:claim")
+    ? await listOffersFor(db, tenantId, userId)
     : [];
 
   if (!tenant) notFound();
@@ -85,8 +86,8 @@ export default async function DriveBoard({
 
         {live.length === 0 ? (
           <p className="sub">
-            {claimable.length > 0
-              ? "Nothing assigned to you yet — take one of the jobs below."
+            {offers.length > 0
+              ? "Nothing assigned to you yet — there are offers below."
               : "When a dispatcher assigns you a job it appears here. Nothing to do right now."}
           </p>
         ) : (
@@ -114,29 +115,54 @@ export default async function DriveBoard({
           </ul>
         )}
 
-        {claimable.length > 0 ? (
+        {offers.length > 0 ? (
           <>
             <h2 className="drive-subhead">
-              Available {claimable.length > 1 ? `— ${claimable.length} jobs` : ""}
+              Offers {offers.length > 1 ? `— ${offers.length}` : ""}
             </h2>
             <ul className="drive-list">
-              {claimable.map((o) => (
-                <li key={o.id}>
-                  <form action={claimOrderAction} className="drive-claim">
-                    <input type="hidden" name="tenantId" value={tenantId} />
-                    <input type="hidden" name="orderId" value={o.id} />
-                    <span className="drive-card-main">
-                      {formatAddressInline(dropoffAddressOf(o))}
-                    </span>
-                    <span className="drive-card-meta">
-                      <span className="mono">{o.reference}</span>
-                    </span>
-                    {/* A submit rather than a link: taking a job is a WRITE, and the
-                        claim resolves in the database so two drivers cannot both win. */}
-                    <button className="btn btn-primary drive-btn" type="submit">
-                      Take this job
-                    </button>
-                  </form>
+              {offers.map((o) => (
+                <li key={o.id} className="drive-offer">
+                  {/* The AMOUNT is the headline. A driver deciding whether to accept is
+                      deciding on the money — burying it under an address would be asking
+                      them to answer a question the screen has not asked.
+                      This is DRIVER PAY, never the customer price: the margin between
+                      them is the operator's business, and showing it to everyone who
+                      declines would hand every driver their rate card. */}
+                  <span className="drive-offer-pay">
+                    {o.driverPayCents === null
+                      ? "Not priced"
+                      : formatUsdCents(o.driverPayCents)}
+                  </span>
+                  <span className="drive-card-main">
+                    {formatAddressInline(dropoffAddressOf(o))}
+                  </span>
+                  <span className="drive-card-meta">
+                    <span className="mono">{o.reference}</span>
+                  </span>
+
+                  <div className="drive-offer-actions">
+                    {/* Submits, not links: accepting and refusing are both WRITES, and
+                        the accept resolves in the database so two drivers cannot win. */}
+                    <form action={claimOrderAction}>
+                      <input type="hidden" name="tenantId" value={tenantId} />
+                      <input type="hidden" name="orderId" value={o.id} />
+                      <button
+                        className="btn btn-primary drive-btn"
+                        type="submit"
+                        disabled={o.driverPayCents === null}
+                      >
+                        Accept
+                      </button>
+                    </form>
+                    <form action={declineOrderAction}>
+                      <input type="hidden" name="tenantId" value={tenantId} />
+                      <input type="hidden" name="orderId" value={o.id} />
+                      <button className="btn btn-quiet drive-btn" type="submit">
+                        Decline
+                      </button>
+                    </form>
+                  </div>
                 </li>
               ))}
             </ul>

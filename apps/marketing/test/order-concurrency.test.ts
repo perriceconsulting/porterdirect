@@ -34,8 +34,9 @@ import {
   OrderValidationError,
   claimOrder,
   createOrder,
+  declineOrder,
   findProof,
-  listClaimableOrders,
+  listOffersFor,
   listOrders,
   findRedispatch,
   recordProof,
@@ -95,6 +96,9 @@ suite("order invariants under real concurrency", () => {
       pickup: address("811 W 7th St"),
       dropoff: address("1355 N Highland Ave"),
       priceCents: 4850,
+      // Priced for a driver, because an unpriced job cannot be accepted — the guard for
+      // that is asserted separately below.
+      driverPayCents: 3200,
       scheduledFor: null,
     });
     return order.id;
@@ -287,6 +291,59 @@ suite("order invariants under real concurrency", () => {
     await db.delete(users).where(inArray(users.id, drivers));
   });
 
+  it("refuses to accept a job with no driver pay set", async () => {
+    // "Accept or decline" with no amount is not a choice. A driver who accepts an
+    // unpriced job has agreed to something nobody stated, and the argument about what it
+    // was worth happens after the work is done.
+    const unpriced = await createOrder(db, {
+      tenantId,
+      actorUserId: ACTOR,
+      type: "fixed_pickup",
+      customerFirstName: "Unpriced",
+      customerLastName: `Case${runId}`,
+      customerPhone: "2133734253",
+      country: "US",
+      pickup: address("811 W 7th St"),
+      dropoff: address("1355 N Highland Ave"),
+      priceCents: 4850,
+      scheduledFor: null,
+    });
+
+    await expect(
+      claimOrder(db, { tenantId, orderId: unpriced.id, userId: driverId }),
+    ).rejects.toThrow(/no driver pay/i);
+
+    // And it stays unassigned rather than half-taken.
+    const [row] = await db.select().from(orders).where(eq(orders.id, unpriced.id));
+    expect(row!.assignedUserId).toBeNull();
+    expect(row!.status).toBe("pending");
+  });
+
+  it("hides a declined offer from that driver and nobody else", async () => {
+    const id = await newJob();
+    const other = `other-${runId}`;
+    await db.insert(users).values({
+      id: other,
+      name: "Other Driver",
+      email: `other-${runId}@race-${runId}.test`,
+    });
+
+    await declineOrder(db, { tenantId, orderId: id, userId: driverId, reason: "Too far" });
+
+    // Gone for the driver who said no...
+    expect((await listOffersFor(db, tenantId, driverId)).map((o) => o.id)).not.toContain(id);
+    // ...and still offered to everyone else. A decline is one person's answer, not a
+    // verdict on the work.
+    expect((await listOffersFor(db, tenantId, other)).map((o) => o.id)).toContain(id);
+
+    // Saying no twice is the same answer, not an error.
+    await expect(
+      declineOrder(db, { tenantId, orderId: id, userId: driverId }),
+    ).resolves.toBeUndefined();
+
+    await db.delete(users).where(inArray(users.id, [other]));
+  });
+
   it("tells the losers something they can act on", async () => {
     const id = await newJob();
     const a = `lose-a-${runId}`;
@@ -314,7 +371,7 @@ suite("order invariants under real concurrency", () => {
     const taken = await newJob();
     await db.update(orders).set({ assignedUserId: driverId }).where(eq(orders.id, taken));
 
-    const claimable = await listClaimableOrders(db, tenantId);
+    const claimable: Awaited<ReturnType<typeof listOffersFor>> = await listOffersFor(db, tenantId, driverId);
     const ids = claimable.map((o) => o.id);
     expect(ids).toContain(free);
     // Assigned-but-still-pending belongs to somebody. Listing it invites two people to
@@ -324,7 +381,7 @@ suite("order invariants under real concurrency", () => {
   });
 
   it("never offers another tenant's unclaimed work", async () => {
-    expect(await listClaimableOrders(db, randomUUID())).toHaveLength(0);
+    expect(await listOffersFor(db, randomUUID(), driverId)).toHaveLength(0);
   });
 
   it("records proof of delivery exactly once under concurrent capture", async () => {
