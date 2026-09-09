@@ -19,3 +19,43 @@ coverage/
 # Playwright run output — regenerated every run, never source.
 test-results/
 playwright-report/
+
+# ---- Credentials and sensitive material --------------------------------
+# Belt and braces. The rules above already cover this repo's own secrets file;
+# these cover the things that arrive later — a cert, a service-account JSON, an
+# editor backup — and that nobody thinks to add a rule for until after the push.
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
+*.ppk
+
+# Cloud / provider credential files
+.npmrc
+.netrc
+auth.json
+service-account*.json
+*credentials*.json
+*-serviceaccount.json
+.aws/
+.gcloud/
+.vercel/
+
+# Anything explicitly named as a secret
+secrets/
+.secrets/
+*.secret
+*.secrets
+
+# Editor and tool backups — these are how a secrets file gets a second life
+# under a name no .env rule matches.
+*.bak
+*.orig
+*.rej
+*.swp
+*~
