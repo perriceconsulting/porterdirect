@@ -70,6 +70,12 @@ export default async function OrdersBoard({
   return (
     <>
       <SiteHeader>
+        {/* An owner or dispatcher may also be driving today. Without this the driver
+            surface is reachable only by typing a URL, which is how a built feature stays
+            unused. */}
+        <a className="btn btn-quiet" href={`/drive/${tenantId}`}>
+          Drive
+        </a>
         <a className="btn btn-quiet" href={`/dashboard/${tenantId}`}>
           Console
         </a>

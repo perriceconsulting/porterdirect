@@ -186,6 +186,48 @@ test.describe("the driver surface", () => {
     }
   });
 
+  test("a driver-only member is routed to /drive, not the console", async ({
+    page,
+    playwright,
+    baseURL,
+  }) => {
+    // The gap this closes: every entry point used to send everyone to the console, so a
+    // driver's first experience of the product was a dispatcher's screen and /drive was
+    // reachable only by being told the URL — a built surface nobody could find.
+    const base = baseURL ?? "http://localhost:3000";
+    const driverEmail = `only-driver@${RUN_DOMAIN}`;
+
+    const ctx = await playwright.request.newContext({ baseURL: base });
+    const res = await ctx.post("/api/auth/sign-up/email", {
+      data: { email: driverEmail, password: PASSWORD, name: "Only Driver" },
+    });
+    expect(res.ok(), `sign-up failed: ${res.status()}`).toBeTruthy();
+    const session = (await (await ctx.get("/api/auth/get-session")).json()) as {
+      user?: { id?: string };
+    };
+    const onlyDriverId = session.user?.id ?? "";
+    await ctx.dispose();
+
+    // A member whose ONLY role is driver — the shape an invited driver ends up in.
+    await db.insert(tenantMembers).values({ tenantId, userId: onlyDriverId, role: "driver" });
+
+    await page.setViewportSize(PHONE);
+    await page.goto("/signin");
+    await page.getByLabel("Email").fill(driverEmail);
+    await page.getByLabel(/password/i).first().fill(PASSWORD);
+    await page.getByRole("button", { name: /sign in/i }).click();
+    // Wait for the sign-in to LAND before navigating. Going straight to /dashboard raced
+    // the session cookie and arrived unauthenticated, which looks like a routing failure
+    // and is a missing await.
+    await page.waitForURL(/\/(welcome|dashboard|drive)/);
+
+    // The generic "take me home" entry point must land them on their own surface.
+    await page.goto("/dashboard");
+    await page.waitForURL(new RegExp(`/drive/${tenantId}$`));
+    expect(page.url()).toContain(`/drive/${tenantId}`);
+    await expect(page.locator("body")).not.toContainText("New job");
+  });
+
   test("refuses a job belonging to someone else", async ({ page }) => {
     await page.setViewportSize(PHONE);
     await signIn(page);

@@ -18,6 +18,7 @@ import {
   resolveConsoleMembership,
   type Membership,
   type Permission,
+  type TenantRole,
 } from "@porterdirect/auth";
 import type { SubscriptionStatus } from "@porterdirect/billing";
 import { getAuth } from "./auth";
@@ -45,6 +46,28 @@ export interface ConsoleContext {
   readonly tenant: ConsoleTenant;
   readonly membership: Membership;
   readonly subscription: ConsoleSubscription | null;
+}
+
+/**
+ * Where a member belongs after signing in, accepting an invite, or asking for "home".
+ *
+ * ONE decision, in one place, because it was previously made implicitly at four separate
+ * redirects and every one of them chose the console. A driver's first experience of the
+ * product — accepting the invitation that brought them onto it — was a dispatcher's
+ * screen, and `/drive` was unreachable unless somebody told them the URL.
+ *
+ * The rule is deliberately about what a member can ONLY do, not about seniority: an owner
+ * who also drives keeps the console as home and reaches `/drive` from the header, because
+ * they have office work to do as well. Someone who can only carry parcels has no office
+ * work, so sending them to an office is sending them somewhere with nothing on it.
+ */
+export function homePathForRole(role: TenantRole, tenantId: string): string {
+  return role === "driver" ? `/drive/${tenantId}` : `/dashboard/${tenantId}`;
+}
+
+/** True when this member has nothing to do in the console. Drives nav, not access. */
+export function isDriverOnly(role: TenantRole): boolean {
+  return role === "driver";
 }
 
 /** Signed-in user id, or a redirect to sign-in. */

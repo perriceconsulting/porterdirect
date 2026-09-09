@@ -9,7 +9,8 @@ import { redirect } from "next/navigation";
 import { createDbClient } from "@porterdirect/db";
 import { SiteHeader } from "../_components/site-header";
 import { signOutAction } from "../actions";
-import { listConsoleTenants, requireUserId } from "../../lib/console";
+import type { TenantRole } from "@porterdirect/auth";
+import { homePathForRole, listConsoleTenants, requireUserId } from "../../lib/console";
 
 export const metadata = { title: "Your operator accounts — PorterDirect" };
 export const dynamic = "force-dynamic";
@@ -19,7 +20,12 @@ export default async function DashboardIndex() {
   const db = createDbClient(process.env.DATABASE_URL);
   const tenants = await listConsoleTenants(db, userId);
 
-  if (tenants.length === 1) redirect(`/dashboard/${tenants[0]!.id}`);
+  // A member who can only drive has nothing to do in the console, so sending them there
+  // is sending them to an empty room. Routed by role, in one place (`homePathForRole`).
+  if (tenants.length === 1) {
+    const only = tenants[0]!;
+    redirect(homePathForRole(only.role as TenantRole, only.id));
+  }
 
   return (
     <>
@@ -50,7 +56,7 @@ export default async function DashboardIndex() {
               <ul className="status-list">
                 {tenants.map((t) => (
                   <li key={t.id}>
-                    <a href={`/dashboard/${t.id}`} className="tenant-link">
+                    <a href={homePathForRole(t.role as TenantRole, t.id)} className="tenant-link">
                       <span className="tenant-name">{t.name}</span>
                       <span className="k">{t.host ?? "no domain yet"}</span>
                     </a>

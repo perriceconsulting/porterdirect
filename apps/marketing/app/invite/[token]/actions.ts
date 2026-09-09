@@ -5,7 +5,9 @@ import { redirect } from "next/navigation";
 import { isRedirectError } from "@porterdirect/auth";
 import { createDbClient } from "@porterdirect/db";
 import { getAuth } from "../../../lib/auth";
+import type { TenantRole } from "@porterdirect/auth";
 import { InvitationError, acceptInvitation } from "../../../lib/invitations";
+import { homePathForRole } from "../../../lib/console";
 
 /**
  * Accept an invitation as the signed-in user.
@@ -26,6 +28,7 @@ export async function acceptInvitationAction(data: FormData): Promise<void> {
   const db = createDbClient(process.env.DATABASE_URL);
 
   let tenantId: string;
+  let role: TenantRole;
   try {
     const result = await acceptInvitation(db, {
       token,
@@ -33,6 +36,7 @@ export async function acceptInvitationAction(data: FormData): Promise<void> {
       userEmail: session.user.email,
     });
     tenantId = result.tenantId;
+    role = result.role;
   } catch (err) {
     if (isRedirectError(err)) throw err;
     if (err instanceof InvitationError) {
@@ -41,5 +45,7 @@ export async function acceptInvitationAction(data: FormData): Promise<void> {
     throw err;
   }
 
-  redirect(`/dashboard/${tenantId}`);
+  // Routed by role. Accepting the invitation that brought you onto the platform is a
+  // driver's first experience of it, and it used to be a dispatcher's console.
+  redirect(homePathForRole(role, tenantId));
 }

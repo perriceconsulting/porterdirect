@@ -172,6 +172,11 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
 - **`image/svg+xml` is an image to a person and a script host to a browser.** The upload
   content type is an allowlist (jpeg/png/webp), never a denylist, because this decides
   what can be written into a bucket the app serves back.
+- **A built surface nobody can reach is not built.** `/drive` existed, worked, and was
+  unreachable: every entry point — sign-in, invite acceptance, the bare `/dashboard`
+  redirect — sent everyone to the console, so a driver's FIRST experience of the product
+  was a dispatcher's screen. Four redirects each decided routing implicitly and all four
+  chose the same wrong answer. `homePathForRole` is now the one place that decides.
 - **Check-then-act idempotency.** Any "have we handled this?" followed by "mark handled"
   is a race: two concurrent deliveries both pass. Claim atomically (INSERT against a
   unique key) and release on a failed apply. Verified live — a check-then-act store
@@ -215,8 +220,9 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
 | **Tenant isolation** | **BUILT** — [phast/tenant-isolation.spec.ts](phast/tenant-isolation.spec.ts). Verified to catch a planted leak, not merely to pass. |
 | **Data-integrity-under-load** | **Applies.** Webhook idempotency, seat/entitlement invariants — most as deterministic unit tests (already begun), browser only where a concern is browser-only. |
 | **Auth isolation** | **BUILT** — auth landed, so this is no longer deferred. Same spec: session bleed, cross-tenant refusal, anonymous refusal, cache-control on identity. |
+| **Assignment isolation** | **BUILT** — [phast/driver-isolation.spec.ts](phast/driver-isolation.spec.ts). A pillar the tenant spec cannot cover: three drivers legitimately INSIDE one tenant, and only assignment separates them. Real browsers, because the failure is what gets painted. Verified to catch a planted leak. |
 | **Realtime DOM reactivity** | **Deliberately not built.** No live map exists; a spec would assert against nothing and read as coverage (the I caveat). |
-| **Render stability** | **Deliberately not built.** No dashboard exists yet. There is also no `phast:headed` script, because with no UI a headed run would imply a browser pillar we have not built. |
+| **Render stability** | **Deliberately not built.** No dashboard render-loop concern has surfaced. `npm run phast:headed` now EXISTS — the note that it did not is obsolete, since there is a UI to watch. |
 
 Money/seat/entitlement invariants are unit tests, not browser tests (they are data
 invariants). Browser stress is reserved for tenant isolation, session/cache bleed, and
@@ -1159,3 +1165,40 @@ live-map reactivity.
     being captured. Cancel and fail stay: a job can still go wrong at a door.
   - Ratchets: tests = 379 + 6 PHAST + **39 e2e** (was 33); client components = 3; lint = 0;
     min-width:max-width media queries = 9:0.
+
+- **2026-09-09 — Routing by role, and a PHAST pillar the tenant spec could not cover.**
+  - Asked why a driver was not treated as its own login, the honest answer was that the
+    identity model was already right — one account, membership scoped per tenant, which is
+    what lets a contractor drive for two firms — but **nothing routed them anywhere**.
+    Sign-in, invite acceptance and the bare `/dashboard` redirect all sent everyone to the
+    console. `/drive` was reachable only by typing the URL. I had built the surface and
+    never wired the doors, which from outside is indistinguishable from a design decision.
+  - `homePathForRole` is now the single place that decides, because four redirects each
+    deciding implicitly is how they all quietly agreed on the wrong answer. The rule is
+    about what a member can ONLY do, not seniority: an owner who also drives keeps the
+    console as home and reaches `/drive` from a header link, because they have office work
+    too. Someone who can only carry parcels has none, so sending them to an office sends
+    them to an empty room.
+  - Explicitly NOT changed: how a driver authenticates. Their account can see customer
+    names, phone numbers and home addresses, so it gets a real password and the same breach
+    checking as an owner — not a PIN or a depot code. What differs is where they land and
+    what they see, never how strongly they prove who they are.
+  - **New PHAST pillar: assignment isolation.** Tenant isolation asks "does licensee A see
+    licensee B's data". This asks the harder question INSIDE one tenant — three drivers who
+    all legitimately belong to it, where only assignment separates them. Tenant scoping
+    cannot help; nothing prior covered it.
+  - Real browsers here, unlike the tenant spec's request contexts, because the failure is
+    what gets **painted**: a driver reading another driver's address off a rendered page.
+    A JSON body would exercise neither the render path nor the router cache.
+  - **Verified to fail**, not merely to pass: removing the per-driver narrowing produced
+    `LEAK: ana saw bea's address` on the concurrent test. The sustained-burst test exists
+    for the reason the tenant spec learned the hard way — a lazily-warmed cache leaks
+    nothing on the first round, so repetition IS the test.
+  - `npm run phast:headed` now exists. It was deliberately absent while there was no UI;
+    there is one now, and watching three browsers load the same route simultaneously is
+    the clearest possible explanation of what this pillar checks.
+  - Also fixed: my own new e2e navigated away before sign-in landed, arriving
+    unauthenticated. It read as a routing failure and was a missing `await` — worth
+    recording because the symptom pointed at the feature rather than the test.
+  - Ratchets: tests = **386** (was 379) + **10 PHAST** (was 6) + **40 e2e** (was 39);
+    client components = 3; lint = 0; min-width:max-width media queries = 9:0.
