@@ -194,6 +194,21 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
   originally pointed at the CONSOLE certificate route, which requires a session — the
   customer was emailed a page that redirected them to a sign-in form for an account they
   do not have. Anything sent to a tenant's customer must resolve without a login.
+- **Next.js metadata INHERITS, so a white-label page ships the marketing card by
+  default.** The customer tracking page overrode `title` and looked anonymous — while
+  still serving the root layout's `applicationName` and OpenGraph block, so a link pasted
+  into WhatsApp or Slack previewed "PorterDirect — white-label logistics platform". The
+  most public form the promise can break in, and it broke with nothing done wrong.
+  Override `applicationName`, `openGraph` and `twitter` explicitly, not just the title.
+- **A signed storage URL in a `src` attribute names your bucket.** The same page embedded
+  `.../porterdirect-pod/tenants/<id>/orders/<id>/...` in an `<img>`; the visible words
+  read as the operator's while the markup named us, and anyone who viewed source or
+  copied the image address saw it. Evidence images are now proxied through our own origin
+  on the customer surface. Uploads still go direct — that is the body-size constraint —
+  and the operator's own console keeps signed URLs, because the operator knows who we are.
+- **"Does our name appear" must be asked of the whole RESPONSE.** The e2e asserted against
+  `innerText`, which cannot see an attribute or a `<meta>` tag, so it passed while both
+  leaks above were live. On a white-label surface, assert on the HTML.
 - **Check-then-act idempotency.** Any "have we handled this?" followed by "mark handled"
   is a race: two concurrent deliveries both pass. Claim atomically (INSERT against a
   unique key) and release on a failed apply. Verified live — a check-then-act store
@@ -1281,3 +1296,35 @@ live-map reactivity.
     index returned first. Refused before it reaches the database, and `/t/%20` proves it.
   - Ratchets: tests = **415** (was 410) + 10 PHAST + **46 e2e** (was 40); client
     components = 3; lint = 0.
+
+- **2026-09-09 — Two anonymity leaks the tracking page only revealed when looked at.**
+  - `npm run demo -- <owner email>` now stages the whole loop and prints a clickable
+    walkthrough: office board, driver view, customer tracking link, certificate. Written
+    because "it works" and "here is it working" are different claims, and only the second
+    can be checked by someone who did not build it.
+  - Running it found **two leaks on the one surface where anonymity is sold**, both
+    invisible on the page and both live:
+    - **The storage URL.** Evidence images were `<img src>`-ed straight from the signed
+      provider URL, putting `.../porterdirect-pod/tenants/<id>/orders/<id>/...` into the
+      markup. View source, or right-click → copy image address, and there we are. Images
+      on the customer surface are now proxied through our own origin. Uploads still go
+      direct — that is the request-body constraint — and the operator's console keeps
+      signed URLs, since the operator already knows who we are.
+    - **Inherited metadata.** `generateMetadata` overrode `title` and `robots` and left
+      the root layout's `applicationName` and OpenGraph block intact, so the page served
+      `og:title = "PorterDirect — white-label logistics platform"`. A customer pasting
+      their tracking link into WhatsApp would have previewed our product name instead of
+      their courier's. Nothing had to be done wrong; **the default did it.**
+  - **The test was asking the wrong question.** It asserted `not.toMatch(/PorterDirect/i)`
+    against `innerText` — which cannot see an attribute or a `<meta>` tag — so it passed
+    while both leaks were live. It now asserts against the whole HTML response and against
+    every `img` `src`. Worth recording as a general rule: on a white-label surface the
+    question is about the RESPONSE, not the words a person reads.
+  - Verified by hand afterwards: zero occurrences of our name in the served page, image
+    sources are relative, `og:site_name` is the operator.
+  - One test was corrected rather than made to pass: the image route's 200 path needs a
+    real object in the bucket, and seeding one would make the browser suite depend on live
+    storage credentials — the same mistake as the HIBP flake. The refusals are asserted;
+    the round trip is covered by the storage tests and was verified against the real
+    bucket by hand.
+  - Ratchets: tests = 415 + 10 PHAST + **47 e2e** (was 46); client components = 3; lint = 0.

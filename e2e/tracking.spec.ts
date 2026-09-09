@@ -113,14 +113,46 @@ test.describe("the customer tracking page", () => {
     await expect(page.locator("body")).toContainText("On the way");
   });
 
-  test("carries the OPERATOR's name and never ours", async ({ page }) => {
-    await page.goto(`/t/${token}`);
+  test("carries the OPERATOR's name and never ours — in the whole RESPONSE", async ({
+    page,
+  }) => {
+    const res = await page.goto(`/t/${token}`);
     const body = await page.locator("body").innerText();
     expect(body).toContain(OPERATOR);
-    // The white-label promise, on the only page a tenant's customer sees.
     expect(body).not.toMatch(/PorterDirect/i);
-    // Including the tab title, which is part of the brand surface.
     expect(await page.title()).not.toMatch(/PorterDirect/i);
+
+    // The assertion that was missing, and the leak it would have caught: the page
+    // embedded the storage provider's signed URL, so `.../porterdirect-pod/tenants/<id>/`
+    // sat in a `src` attribute. The visible text read as the operator's while the markup
+    // named us, and `innerText` cannot see an attribute. On a white-label surface the
+    // question is about the whole response, not the words a person reads.
+    const html = (await res!.text());
+    expect(html, "our name appears in the markup").not.toMatch(/porterdirect/i);
+
+    // Nor may any image be fetched from somewhere that names us.
+    const sources = await page.locator("img").evaluateAll((els) =>
+      els.map((e) => (e as HTMLImageElement).getAttribute("src") ?? ""),
+    );
+    for (const src of sources) {
+      expect(src, `image src leaks: ${src}`).not.toMatch(/porterdirect|neon\.tech|storage/i);
+    }
+  });
+
+  test("refuses an unknown token or an invented image kind", async ({ page }) => {
+    // The image route is proxied so the customer's browser never learns where the bytes
+    // live — asserted above, on the `src` attributes, which is where the leak was.
+    //
+    // The 200 path is deliberately NOT asserted here. Serving a real image needs a real
+    // object in the bucket, and seeding one would make the browser suite depend on live
+    // storage credentials. This project already learned that lesson from the breach
+    // check: a live third-party call inside a test path produces a moving failure that
+    // reads like a product fault. The round trip is covered by the storage tests and was
+    // verified by hand against the real bucket.
+    expect((await page.request.get(`/t/${"z".repeat(32)}/photo`)).status()).toBe(404);
+    expect((await page.request.get(`/t/${token}/passport`)).status()).toBe(404);
+    // A job with no proof has no image, and says so the same way.
+    expect((await page.request.get(`/t/${token}/photo`)).status()).toBe(404);
   });
 
   test("shows the delivery and withholds everything else", async ({ page }) => {

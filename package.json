@@ -27,7 +27,8 @@
     "e2e": "playwright test --project=e2e",
     "e2e:headed": "npm run e2e -- --headed --workers=1",
     "seed:demo": "tsx scripts/seed-demo-jobs.ts",
-    "phast:headed": "npm run phast -- --headed --workers=1"
+    "phast:headed": "npm run phast -- --headed --workers=1",
+    "demo": "tsx scripts/demo-walkthrough.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

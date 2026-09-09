@@ -28,7 +28,6 @@ import {
   findOrderByPublicToken,
   findProof,
 } from "../../../lib/orders";
-import { presignProofDownload } from "../../../lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -67,10 +66,36 @@ export async function generateMetadata({ params }: { params: Promise<{ token: st
     .from(tenants)
     .where(eq(tenants.id, order.tenantId))
     .limit(1);
-  // The browser tab is part of the brand surface. Ours must not appear in it either.
+  const operator = tenant?.name ?? "Delivery";
+  const title = `${order.reference} — ${operator}`;
+
+  // EVERY inherited field is overridden, not just the title. The root layout sets
+  // `applicationName` and a full OpenGraph block for the marketing site, and metadata
+  // inherits — so this page was serving
+  // `og:title = "PorterDirect — white-label logistics platform"`. Nothing was visible on
+  // the page; the leak appeared the moment a customer pasted their tracking link into
+  // WhatsApp or Slack and the preview named our product instead of their courier.
+  //
+  // That is the most public form the anonymity promise can break in, and it broke by
+  // DEFAULT — nothing had to be done wrong for it to happen.
   return {
-    title: `${order.reference} — ${tenant?.name ?? "Delivery"}`,
+    title,
+    description: `Delivery ${order.reference} from ${operator}.`,
+    applicationName: operator,
     robots: { index: false, follow: false },
+    openGraph: {
+      type: "website",
+      siteName: operator,
+      title,
+      description: `Delivery ${order.reference} from ${operator}.`,
+      // No image: the marketing card would put our logo on a customer's delivery link.
+      images: [],
+    },
+    twitter: {
+      card: "summary",
+      title,
+      description: `Delivery ${order.reference} from ${operator}.`,
+    },
   };
 }
 
@@ -95,8 +120,11 @@ export default async function TrackDelivery({
   if (!tenant) notFound();
 
   const proof = await findProof(db, order.tenantId, order.id);
-  const signatureUrl = proof?.signatureKey ? await presignProofDownload(proof.signatureKey) : null;
-  const photoUrl = proof?.photoKey ? await presignProofDownload(proof.photoKey) : null;
+  // Served from OUR origin, never the storage provider's signed URL. A direct URL put
+  // `.../porterdirect-pod/tenants/<id>/...` into a `src` attribute on the one page a
+  // tenant's customer sees: the words read as the operator's while the markup named us.
+  const signatureUrl = proof?.signatureKey ? `/t/${token}/signature` : null;
+  const photoUrl = proof?.photoKey ? `/t/${token}/photo` : null;
 
   const copy = CUSTOMER_STATUS[order.status] ?? {
     headline: STATUS_LABELS[order.status],
