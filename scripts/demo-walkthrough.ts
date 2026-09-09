@@ -61,12 +61,18 @@ const tenantId = tenant.id;
 console.log(`Setting up a demo for ${tenant.name}\n`);
 
 // Clear first, so the tour is the same every time it is run.
+//
+// The cost of that, said plainly because it looks exactly like a bug: a tracking token
+// belongs to an ORDER, so deleting the jobs invalidates every customer link a previous
+// run printed. Re-running while an old /t/<token> tab is open makes that tab 404 — and
+// the tracking page deliberately answers "no such token" and "expired" identically, so
+// there is nothing on the page to tell a stale link from a broken one.
 const existing = await db.select({ id: orders.id }).from(orders).where(eq(orders.tenantId, tenantId));
 if (existing.length > 0) {
   await db.delete(orderProofs).where(eq(orderProofs.tenantId, tenantId));
   await db.delete(orderEvents).where(eq(orderEvents.tenantId, tenantId));
   await db.delete(orders).where(eq(orders.tenantId, tenantId));
-  console.log(`  cleared ${existing.length} previous job(s)`);
+  console.log(`  cleared ${existing.length} previous job(s) — links printed by an earlier run now 404`);
 }
 
 const addr = (line1: string, city: string, region: string, postalCode: string) => ({
@@ -200,5 +206,9 @@ ${line("C. DELIVERED", done.id, "Signed and photographed. The customer link show
 
 Note: office and driver need a session; the customer link deliberately
 does not — that is the white-label surface, and it must open for a stranger.
+
+Use the links ABOVE, not ones from an earlier run. This script replaces the
+jobs each time, and a tracking token dies with its order — an old customer
+tab will 404, which is correct behaviour and looks like a broken page.
 ────────────────────────────────────────────────────────────
 `);
