@@ -148,6 +148,17 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
   exact — "true"/"1"/"yes"/"FIXTURE" do not enable it. A breach check that quietly became
   a no-op in production would keep the signup form saying all the right things while
   accepting passwords from every public dump.
+- **A boolean alias does not narrow a parameter's property.**
+  `const closing = args.to === "cancelled" || args.to === "failed"` reads exactly like a
+  narrowing check and is not one: TypeScript's aliased-condition narrowing does not reach
+  a property of a function PARAMETER, so `args.to` stays wide at the call site. Use a type
+  guard (`isClosingStatus`). This shipped to production because `npm run typecheck` only
+  covered `packages/` — the Vercel build was the first thing that ever type-checked the app.
+- **`tsc -b packages/*` is not "the typecheck".** A monorepo script that names packages
+  silently excludes every app, and Next's build is then the first and only check on the
+  largest body of code in the repo. `npm run typecheck` now covers `apps/marketing` too;
+  adding it immediately surfaced three pre-existing errors, including a test file that
+  passed under vitest and could never compile (Next types `process.env.NODE_ENV` readonly).
 - **Check-then-act idempotency.** Any "have we handled this?" followed by "mark handled"
   is a race: two concurrent deliveries both pass. Claim atomically (INSERT against a
   unique key) and release on a failed apply. Verified live — a check-then-act store

@@ -12,14 +12,22 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { breachSource, validatePassword } from "../lib/password";
 
+
+/**
+ * Next's types declare `process.env.NODE_ENV` readonly, so assigning it does not compile
+ * even though it works at runtime. Written through a mutable view rather than sprinkling
+ * casts: the point of the test is the guard's behaviour, not the type of the environment.
+ */
+const env = process.env as Record<string, string | undefined>;
+
 const ORIGINAL_SOURCE = process.env.PASSWORD_BREACH_SOURCE;
 const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 
 afterEach(() => {
   if (ORIGINAL_SOURCE === undefined) delete process.env.PASSWORD_BREACH_SOURCE;
   else process.env.PASSWORD_BREACH_SOURCE = ORIGINAL_SOURCE;
-  if (ORIGINAL_NODE_ENV === undefined) delete process.env.NODE_ENV;
-  else process.env.NODE_ENV = ORIGINAL_NODE_ENV;
+  if (ORIGINAL_NODE_ENV === undefined) delete env.NODE_ENV;
+  else env.NODE_ENV = ORIGINAL_NODE_ENV;
 });
 
 describe("breach check served from the fixture", () => {
@@ -50,7 +58,7 @@ describe("breach check served from the fixture", () => {
 describe("the seam cannot survive a deploy", () => {
   it("throws rather than quietly skipping the breach check in production", async () => {
     process.env.PASSWORD_BREACH_SOURCE = "fixture";
-    process.env.NODE_ENV = "production";
+    env.NODE_ENV = "production";
     // Loud beats permissive. A no-op breach check in production would keep the signup
     // form saying all the right things while accepting passwords from every public dump.
     await expect(validatePassword("marmalade thunder quilt")).rejects.toThrow(/REFUSING/);
@@ -63,7 +71,7 @@ describe("the seam cannot survive a deploy", () => {
     // Asserted against the SELECTOR rather than by calling validatePassword, so this test
     // makes no network calls of its own — adding a live HIBP dependency back into the
     // suite while removing one from e2e would be a poor trade.
-    process.env.NODE_ENV = "production";
+    env.NODE_ENV = "production";
     for (const value of ["true", "1", "yes", "FIXTURE", ""]) {
       process.env.PASSWORD_BREACH_SOURCE = value;
       expect(() => breachSource(), `value ${JSON.stringify(value)}`).not.toThrow();
@@ -71,7 +79,7 @@ describe("the seam cannot survive a deploy", () => {
   });
 
   it("selects the fixture only for the exact value, and only outside production", () => {
-    delete process.env.NODE_ENV;
+    delete env.NODE_ENV;
     process.env.PASSWORD_BREACH_SOURCE = "fixture";
     const chosen = breachSource();
     process.env.PASSWORD_BREACH_SOURCE = "true";

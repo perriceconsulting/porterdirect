@@ -19,6 +19,7 @@ import {
   CLOSURE_REASON_LABELS,
   assertTransition,
   isRedispatchable,
+  isClosingStatus,
   isValidReasonFor,
   type ClosureReason,
   type OrderStatus,
@@ -269,8 +270,12 @@ export async function transitionOrder(
   // A job that ends without delivery must say WHY. Free text cannot be counted, and
   // counting is the point: dispatch efficiency cannot be improved without knowing which
   // failures are frequent and whose fault they are.
-  const closing = args.to === "cancelled" || args.to === "failed";
-  if (closing) {
+  // Checked INLINE, not via a boolean alias. `const closing = to === "cancelled" || ...`
+  // reads identically and does not narrow `args.to`: aliased-condition narrowing does not
+  // reach a property of a function parameter, so the call below failed to type-check.
+  // It shipped, because `npm run typecheck` did not cover this app.
+  const closing = isClosingStatus(args.to);
+  if (isClosingStatus(args.to)) {
     if (!args.reason) {
       throw new OrderValidationError(`Choose a reason before marking this job ${args.to}.`);
     }

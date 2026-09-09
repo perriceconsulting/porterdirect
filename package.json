@@ -11,7 +11,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc -b packages/db packages/billing packages/auth packages/orders packages/contact",
+    "typecheck": "tsc -b packages/db packages/billing packages/auth packages/orders packages/contact && tsc --noEmit -p apps/marketing/tsconfig.json",
     "verify:catalog": "vitest run packages/billing/test/plans.test.ts",
     "guard:stripe": "bash scripts/guard-stripe-env.sh",
     "stripe:doctor": "bash scripts/stripe-doctor.sh",

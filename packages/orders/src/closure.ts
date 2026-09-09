@@ -73,13 +73,29 @@ export const CLOSURE_REASON_LABELS: Record<ClosureReason, string> = {
   weather_or_road: "Weather or road conditions",
 };
 
+/**
+ * The two ways a job ends WITHOUT being delivered.
+ *
+ * Named, rather than written as an inline union in three signatures, because callers
+ * need to narrow to it — and a bare `const closing = to === "cancelled" || to === "failed"`
+ * does NOT narrow. TypeScript's aliased-condition narrowing does not apply to a property
+ * of a function parameter, so that pattern type-checks at the assignment and then fails
+ * at the call site. It shipped, and the Vercel build caught it.
+ */
+export type ClosingStatus = "cancelled" | "failed";
+
+/** A type guard, so callers get real narrowing instead of a boolean that looks like one. */
+export function isClosingStatus(status: string): status is ClosingStatus {
+  return status === "cancelled" || status === "failed";
+}
+
 /** Which reasons may accompany a given terminal status? */
-export function reasonsFor(status: "cancelled" | "failed"): readonly ClosureReason[] {
+export function reasonsFor(status: ClosingStatus): readonly ClosureReason[] {
   return status === "cancelled" ? CANCELLATION_REASONS : FAILURE_REASONS;
 }
 
 export function isValidReasonFor(
-  status: "cancelled" | "failed",
+  status: ClosingStatus,
   reason: string,
 ): reason is ClosureReason {
   return (reasonsFor(status) as readonly string[]).includes(reason);
