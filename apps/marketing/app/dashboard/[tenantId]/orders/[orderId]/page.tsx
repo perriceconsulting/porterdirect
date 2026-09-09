@@ -354,9 +354,22 @@ export default async function OrderDetail({
                     ) : null}
                   </div>
 
+                  {/* The artifact the CUSTOMER receives. Branded to the operator, not to
+                      us — the first thing that leaves the platform and reaches a tenant's
+                      own client, and so the first real test of platform anonymity. */}
+                  <p className="form-actions">
+                    <a
+                      className="btn btn-primary"
+                      href={`/dashboard/${tenantId}/orders/${orderId}/proof.pdf`}
+                      target="_blank"
+                      rel="noopener"
+                    >
+                      Delivery certificate (PDF)
+                    </a>
+                  </p>
                   <p className="hint">
-                    Stored privately. These links are signed and expire — reload the page
-                    to view them again.
+                    Carries {tenant.name}&rsquo;s name, not ours — send it to the customer
+                    as their receipt. Images are stored privately and these links expire.
                   </p>
                 </>
               ) : mayCaptureProof ? (

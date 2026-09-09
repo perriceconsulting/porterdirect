@@ -17,6 +17,7 @@
     "@porterdirect/db": "*",
     "@porterdirect/orders": "*",
     "next": "^15.1.6",
+    "pdf-lib": "1.17.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "stripe": "^17.4.0"
