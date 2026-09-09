@@ -1104,8 +1104,16 @@ live-map reactivity.
   - Lint caught the prop typed `=> void` for an action that returns a promise — the
     component was claiming synchrony it did not have, and `busy` would have cleared
     before the write landed.
-  - **Not yet verified end to end**: no storage credential exists yet, so presigning is
-    proven by unit test (local HMAC, no network) and the round trip is not. Said plainly
-    rather than implied — the code is written, the upload has never happened.
+  - **Now verified end to end** (2026-09-09, same day): a real 1x1 PNG uploaded through a
+    presigned PUT (200), read back through a presigned GET with **byte-identical**
+    content, and — the security assertion that matters — the same object requested
+    WITHOUT a signature returned **403**. The bucket is genuinely private, not merely
+    labelled private. Test object deleted afterwards.
+  - **Neon issues the credential as `AWS_*`** (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+    `AWS_ENDPOINT_URL_S3`, `AWS_REGION`), which the AWS SDK picks up from the environment
+    automatically. Consolidated to the purpose-named `STORAGE_*` set rather than keeping
+    both: two names for one credential is the drift this file keeps recording, and an
+    `AWS_*` pair sitting inert in the environment is exactly the kind of thing a later SDK
+    client silently adopts. One name per fact.
   - Ratchets: tests = **377** (was 360) + 6 PHAST + 33 e2e; client components = **3**
     (was 2, with reason); lint = 0; min-width:max-width media queries = 9:0.
