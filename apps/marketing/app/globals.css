@@ -1130,3 +1130,113 @@ input[aria-invalid="true"] {
     align-items: start;
   }
 }
+
+/* ---- Driver surface ---------------------------------------------------- */
+/* Single column at every width, deliberately. This is used one-handed, standing up,
+   and a two-column layout on a tablet would only move the primary action further from
+   a thumb. There is no desktop variant because there is no desktop use. */
+.drive {
+  max-width: 34rem;
+  margin: 0 auto;
+  padding: 1.25rem 1.25rem 4rem;
+  display: grid;
+  gap: 1.1rem;
+}
+.drive-title {
+  font-family: var(--fs-display);
+  font-size: clamp(1.5rem, 6vw, 2rem);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  margin: 0;
+  text-wrap: balance;
+}
+.drive-subhead {
+  font-family: var(--fs-display);
+  font-size: 1rem;
+  margin: 0.5rem 0 0;
+}
+.drive-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+/* The address is the headline of the screen: big, selectable, one line per part. */
+.drive-address {
+  font-style: normal;
+  font-size: 1.15rem;
+  line-height: 1.5;
+  display: grid;
+}
+
+.drive-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem; /* >= 8px between adjacent targets */
+}
+.drive-card {
+  display: grid;
+  gap: 0.45rem;
+  /* Well above the 44px minimum: this is the primary target on the screen and it is
+     tapped while holding something. */
+  min-height: 76px;
+  align-content: center;
+  padding: 0.9rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  text-decoration: none;
+  color: var(--ink);
+}
+.drive-card:hover { border-color: var(--accent); }
+.drive-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.drive-card-main { font-size: 1.05rem; line-height: 1.35; }
+.drive-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.8rem;
+  color: var(--ink-3);
+}
+.drive-list-quiet .drive-card { background: var(--surface-2); min-height: 60px; }
+
+.drive-actions {
+  display: grid;
+  gap: 0.75rem;
+}
+.drive-btn {
+  width: 100%;
+  /* Bigger than the 44px floor. Navigate and the completion action are the two things
+     this screen exists for. */
+  min-height: 56px;
+  font-size: 1rem;
+}
+.drive-actions-primary { margin-top: 0.5rem; }
+
+.drive-facts {
+  margin: 0;
+  display: grid;
+  gap: 0.8rem;
+  padding: 1rem;
+  background: var(--surface-2);
+  border-radius: 6px;
+}
+.drive-facts div { display: grid; gap: 0.15rem; }
+.drive-facts dt {
+  font-family: var(--fs-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.drive-facts dd { margin: 0; font-size: 0.95rem; }
+
+.drive-proof {
+  display: grid;
+  gap: 0.8rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--rule);
+}

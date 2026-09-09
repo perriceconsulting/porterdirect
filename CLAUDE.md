@@ -1117,3 +1117,45 @@ live-map reactivity.
     client silently adopts. One name per fact.
   - Ratchets: tests = **377** (was 360) + 6 PHAST + 33 e2e; client components = **3**
     (was 2, with reason); lint = 0; min-width:max-width media queries = 9:0.
+
+- **2026-09-09 — A driver surface, because "a driver can use the console" was misleading.**
+  - Asked whether the POD screenshot was the driver UI or the office UI, the honest answer
+    was that there was only ONE UI and a driver borrowed it. Nothing was broken — a driver
+    could complete a job end to end — but nobody had designed the experience they got.
+    The confusion arriving from the person who defined the business is the argument: it
+    would arrive for a driver on day one.
+  - `/drive` is a separate surface, not the board with things hidden. A console is for
+    sitting down and deciding across many jobs; this is for standing at a door holding a
+    parcel. One page carrying both in conditionals gets worse every time either side
+    changes.
+  - **What is ABSENT is the design.** No price (a driver does not collect it, and showing
+    it invites a conversation at the door they have no authority to have), no audit trail
+    (an office artefact for disputes, not for "where am I going"), no other drivers' work.
+    The e2e spec asserts the absences, because those are what erode silently.
+  - **`/drive` means "mine", not a permission level.** Every role sees their OWN assigned
+    jobs here — an ops user who drives on a Friday needs this too, and making them hold a
+    different role would be the product answering to its own schema. Deep links are still
+    governed by the console's rule, so the LIST being "mine" does not weaken access.
+  - **Two earlier decisions finally paid off**, both argued on these grounds long before
+    anything used them: E.164 storage becomes a `tel:` link that dials without retyping,
+    and structured addresses become a maps query built from real parts rather than a
+    free-text line handed to a geocoder.
+  - Driver actions are SEPARATE from the console's, for one reason: where they redirect.
+    The alternative — a `returnTo` field on a shared action — is a client-supplied
+    redirect target, and validating one of those correctly is a well-trodden way to ship
+    an open redirect. The destination is decided from constants, so there is nothing to
+    validate.
+  - Single column at every width, deliberately: no desktop variant, because there is no
+    desktop use, and a two-column tablet layout would only push the primary action
+    further from a thumb. Targets are 56px (buttons) and 76px (job cards) against a 44px
+    floor — this is tapped one-handed while carrying something.
+  - **Measured, not eyeballed**: zero undersized targets, no horizontal scroll at 390px,
+    no price, no history, one `tel:` and one maps link. The only sub-44px element on the
+    page is Next's own dev-tools button, which is the framework's and development-only.
+  - Also fixed in this pass, found by rendering the console POD page: the two-column grid
+    orphaned "Move this job" with dead space beside it, and a bare "Delivered" button sat
+    next to the capture form — two paths to one state, one of which skips the evidence.
+    On a wet doorstep the easy one wins, so the forward move is withdrawn while proof is
+    being captured. Cancel and fail stay: a job can still go wrong at a door.
+  - Ratchets: tests = 379 + 6 PHAST + **39 e2e** (was 33); client components = 3; lint = 0;
+    min-width:max-width media queries = 9:0.
