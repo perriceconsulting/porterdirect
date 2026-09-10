@@ -9,7 +9,6 @@
  *   bound to the invited EMAIL, so a forwarded link cannot be used by whoever received it;
  *   single-use and time-bound, so a link in an old inbox is not a standing key.
  */
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   tenantInvitations,
@@ -20,9 +19,16 @@ import {
   type TenantRole,
 } from "@porterdirect/db";
 import { assertCanInviteRole } from "@porterdirect/auth";
-
-/** Seven days. Long enough to be found, short enough not to linger. */
-const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+// The token primitives are shared with customer invitations. What a token GRANTS is
+// decided here; how it is minted, hashed and compared is one implementation, because a
+// second one that compared with `===` would pass every test and be guessable.
+import {
+  hashInviteToken,
+  inviteExpiry,
+  inviteTokenMatches,
+  newInviteToken,
+  normalizeInviteEmail,
+} from "./invite-token";
 
 export class InvitationError extends Error {
   constructor(
@@ -39,14 +45,6 @@ export class InvitationError extends Error {
     super(message);
     this.name = "InvitationError";
   }
-}
-
-function hashToken(token: string): string {
-  return createHash("sha256").update(token, "utf8").digest("hex");
-}
-
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
 }
 
 export interface CreateInvitationResult {
@@ -69,7 +67,7 @@ export async function createInvitation(
   // leaves no trace to clean up.
   assertCanInviteRole(args.inviterRole, args.role);
 
-  const email = normalizeEmail(args.email);
+  const email = normalizeInviteEmail(args.email);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new InvitationError("invalid-email", "Enter a valid email address.");
   }
@@ -102,7 +100,7 @@ export async function createInvitation(
 
   // 32 bytes of crypto randomness. Not a uuid: a uuid is an identifier, and identifiers
   // turn up in logs, referrers and analytics. This is a secret.
-  const token = randomBytes(32).toString("base64url");
+  const token = newInviteToken();
 
   const [invitation] = await db
     .insert(tenantInvitations)
@@ -110,9 +108,9 @@ export async function createInvitation(
       tenantId: args.tenantId,
       email,
       role: args.role,
-      tokenHash: hashToken(token),
+      tokenHash: hashInviteToken(token),
       invitedByUserId: args.inviterUserId,
-      expiresAt: new Date(Date.now() + INVITE_TTL_MS),
+      expiresAt: inviteExpiry(),
     })
     .returning();
 
@@ -156,7 +154,7 @@ export async function findInvitationByToken(
   token: string,
 ): Promise<TenantInvitation | null> {
   if (!token) return null;
-  const wanted = hashToken(token);
+  const wanted = hashInviteToken(token);
 
   const [row] = await db
     .select()
@@ -165,9 +163,7 @@ export async function findInvitationByToken(
     .limit(1);
   if (!row) return null;
 
-  const a = Buffer.from(row.tokenHash, "utf8");
-  const b = Buffer.from(wanted, "utf8");
-  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  if (!inviteTokenMatches(row.tokenHash, wanted)) return null;
   return row;
 }
 
@@ -192,7 +188,7 @@ export async function acceptInvitation(
   if (invitation.expiresAt.getTime() < Date.now()) {
     throw new InvitationError("expired", "That invitation has expired. Ask for a new one.");
   }
-  if (normalizeEmail(args.userEmail) !== invitation.email) {
+  if (normalizeInviteEmail(args.userEmail) !== invitation.email) {
     throw new InvitationError(
       "wrong-account",
       `This invitation was sent to ${invitation.email}. Sign in as that account to accept it.`,
