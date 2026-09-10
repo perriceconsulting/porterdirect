@@ -144,7 +144,10 @@ suite("order invariants under real concurrency", () => {
     if (!db || !tenantId) return;
     // Scoped to THIS run's tenant — the only thing this suite owns.
     await db.delete(orderProofs).where(eq(orderProofs.tenantId, tenantId));
-    await db.delete(orderEvents).where(eq(orderEvents.tenantId, tenantId));
+    // Audit rows are NOT deleted here, and cannot be: `order_events` is append-only in
+    // the database and its rows are retained for six years. Test and demo runs therefore
+    // leave their custody trail behind, which is the same thing production does and is
+    // the point of the guarantee — a trail a cleanup script can erase is not a trail.
     await db.delete(orders).where(eq(orders.tenantId, tenantId));
     await db.delete(tenants).where(eq(tenants.id, tenantId));
     if (driverId) await db.delete(users).where(eq(users.id, driverId));

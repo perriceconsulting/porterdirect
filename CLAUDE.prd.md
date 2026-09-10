@@ -333,7 +333,7 @@ this document in one place and found four requirements with no foundation at all
 | Requirement | Status | The actual gap |
 |---|---|---|
 | Proof of delivery | **BUILT** | Capture verified on a real phone. |
-| Chain of custody | **PARTIAL** | See below. |
+| Chain of custody | **BUILT 2026-09-10** | Append-only is now a database TRIGGER rather than a comment, with no foreign keys so no cascade can erase it, and DELETE permitted only past the six-year retention date. Verified by attempting the tampering, not by reading a grant. Field-edit history is still outstanding — the trail records status transitions only. |
 | **Retention** | **BUILT 2026-09-10** | Was worse than absent: deleting an order orphaned the POD photo and signature with no key left to find them — PHI we could neither account for nor destroy on request. Now `storage_objects`, a ledger of bucket contents that survives any cascade, with a six-year date stored per object and a sweep that destroys on time and records that it did. Costed before it was promised: ~$10/mo per Direct Courier tenant at year six, ~$102 at Agency scale. |
 | **Access logging** | **BUILT 2026-09-10** | Every read of stored evidence and every tracking-link open now writes an audit row: who, which order, when, from where. Enforced structurally — the unaudited primitive is named as such and `verify:conventions` fails on any caller outside a four-entry allowlist. Fails closed: no audit row, no URL. **This is the wedge** (§9.2). |
 | Temperature capture | **NOT BUILT** | Zero occurrences repo-wide. `order_proofs` is the nearest shape but its unique-per-order index cannot hold a pickup *and* a handoff reading. |
@@ -408,8 +408,10 @@ Settled 2026-09-10. The sequence is a dependency chain, not a priority list.
       bucket-level expiry deletes without recording that it did — which leaves the same
       "cannot account for it" problem pointing the other way.
    3. ~~Access logging~~ — **done.** Who read a POD, who opened a tracking link, when.
-   4. **Enforce append-only in the database** — trigger plus revoked UPDATE/DELETE.
-   5. Stop the tenant/order cascade destroying custody records.
+   4. ~~Enforce append-only in the database~~ — **done**, via a trigger. Grants were
+      considered and rejected: a grant protects against a role, a trigger against everyone.
+   5. ~~Stop the tenant/order cascade destroying custody records~~ — **done**, all three
+      foreign keys removed.
    6. Extend custody to **field edits**, not just status transitions.
    7. **Export pack.** Not a late deliverable: a custody trail is invisible until a client
       asks for it, so the export is the artifact that makes the value legible. A courier

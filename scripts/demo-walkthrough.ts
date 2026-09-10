@@ -14,7 +14,6 @@ import { readFileSync } from "node:fs";
 import { eq } from "drizzle-orm";
 import {
   createDbClient,
-  orderEvents,
   orderProofs,
   orders,
   tenantMembers,
@@ -70,7 +69,8 @@ console.log(`Setting up a demo for ${tenant.name}\n`);
 const existing = await db.select({ id: orders.id }).from(orders).where(eq(orders.tenantId, tenantId));
 if (existing.length > 0) {
   await db.delete(orderProofs).where(eq(orderProofs.tenantId, tenantId));
-  await db.delete(orderEvents).where(eq(orderEvents.tenantId, tenantId));
+  // Not cleared: order_events is append-only in the database and retained for six
+  // years, so a re-run adds to the trail rather than replacing it.
   await db.delete(orders).where(eq(orders.tenantId, tenantId));
   console.log(`  cleared ${existing.length} previous job(s) — links printed by an earlier run now 404`);
 }

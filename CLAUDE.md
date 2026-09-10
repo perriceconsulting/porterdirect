@@ -29,6 +29,7 @@ agencies) who run the physical work under their own brand + domain.
 | DB migrations | [packages/db/drizzle/](packages/db/drizzle/) | GENERATED from `schema.ts` via `npm run db:generate` — never hand-write DDL |
 | Env file reading | [scripts/lib/load-env.sh](scripts/lib/load-env.sh) | The only place a secrets file is read; parses as data, never sourced |
 | Authorization policy | [packages/auth/src/permissions.ts](packages/auth/src/permissions.ts) | The role→permission matrix; pure, exhaustive, no inheritance chain |
+| Chain of custody | [packages/db/drizzle/0022_order_events_append_only.sql](packages/db/drizzle/0022_order_events_append_only.sql) | Append-only enforced by a TRIGGER, not a comment. No foreign keys. DELETE is dated, not forbidden — the retention rule lives in Postgres |
 | Access auditing | [apps/marketing/lib/access-log.ts](apps/marketing/lib/access-log.ts) | `openEvidence` is the ONLY audited path to a stored object; the primitive is named `presignProofDownloadUnaudited` and `verify:conventions` fails on any caller outside a tiny allowlist |
 | Evidence retention | [apps/marketing/lib/retention.ts](apps/marketing/lib/retention.ts) | Six years, stored PER OBJECT at write time. `storage_objects` is the durable index of bucket contents and deliberately carries NO foreign keys |
 | Proof-of-delivery storage | [apps/marketing/lib/storage.ts](apps/marketing/lib/storage.ts) | Neon S3-compatible, private bucket. Presigned both ways; keys persisted, URLs never |
@@ -330,6 +331,34 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
   primitive for the internal fetches. Logging each fetch would turn one download into
   three audit rows and make the log describe our plumbing rather than the reader's
   behaviour. This is why the conventions allowlist has four entries rather than two.
+- **"Append-only by convention" is not append-only.** `order_events` carried that phrase
+  in a comment and in the PRD's built list, while every UPDATE and DELETE simply worked —
+  zero triggers, grants or policies across the whole migration history. It is now a
+  BEFORE UPDATE OR DELETE trigger, chosen over revoked grants because a grant protects
+  against a role and a trigger protects against everyone including the owner. This is a
+  hand-written migration, the one exception to "migrations are generated from schema.ts",
+  because drizzle cannot express a trigger and the alternative was leaving the claim false.
+- **Delete is DATED, not forbidden.** A blanket refusal would make the six-year retention
+  unenforceable in the other direction — holding PHI forever with no lawful basis. The
+  trigger reads `retain_until` and permits a delete only once it has passed, which puts
+  the policy in Postgres rather than in something someone has to remember to run. It also
+  closes a subtler hole for free: BACKDATING `retain_until` is itself an UPDATE, so a
+  retention period cannot be quietly shortened on a record already written.
+- **`ON DELETE SET NULL` is an UPDATE, and an append-only trigger refuses it.**
+  `order_events.actor_user_id` pointed at `users` with SET NULL, so deleting a user would
+  have failed with a trigger error naming a table nobody was touching. All three foreign
+  keys were removed: who moved a job is a historical fact that stays recorded whether or
+  not that person still has an account.
+- **Classify a database refusal by SQLSTATE, never by message.** Third time this has bitten.
+  The append-only tests were written as `.rejects.toThrow(/append-only/i)` and all four
+  failed while the trigger worked perfectly — Drizzle wraps the error and its message is
+  the failed SQL, so the match saw "Failed query: update ...". `sqlState` and
+  `isRestrictViolation` in [packages/db/src/errors.ts](packages/db/src/errors.ts)
+  generalise the cause-chain walk that `uniqueViolation` already did.
+- **Making an audit table append-only means cleanup scripts cannot clean it.** Seven test
+  and demo teardowns deleted `order_events`; all seven now leave the trail behind, which is
+  what production does. Rows from test runs accumulate, and that is the guarantee working:
+  a trail a cleanup script can erase is not a trail.
 - **Off-shift / post-delivery tracking** (driver app, later): location visibility is wired to
   shift/order status; continuing to track after off-shift is a legal liability, not a bug.
 - **Optimistic/offline updates that never reconcile** (driver app, later): every optimistic or

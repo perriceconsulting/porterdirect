@@ -20,6 +20,7 @@ import {
   uniqueIndex,
   index,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { ORDER_STATUSES, ORDER_TYPES } from "@porterdirect/orders";
 
 /**
@@ -910,22 +911,45 @@ export const orderEvents = pgTable(
   "order_events",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    tenantId: uuid("tenant_id")
-      .notNull()
-      .references(() => tenants.id, { onDelete: "cascade" }),
-    orderId: uuid("order_id")
-      .notNull()
-      .references(() => orders.id, { onDelete: "cascade" }),
+    /**
+     * NO FOREIGN KEYS on any of the three ids below, and every one of them was removed
+     * deliberately on 2026-09-10.
+     *
+     * `tenant_id` and `order_id` cascaded, so deleting one order erased its entire
+     * chain of custody and deleting a tenant erased every trail they had ever produced —
+     * an audit log a cascade can destroy is not an audit log, and the moment somebody
+     * deletes a tenant is precisely when the trail matters.
+     *
+     * `actor_user_id` was `ON DELETE SET NULL`, which is subtler and would have broken
+     * outright: setting it null is an UPDATE, and the append-only trigger below refuses
+     * updates — so deleting a user would have failed with a trigger error pointing at a
+     * table nobody was touching. Who moved a job is a historical fact and stays recorded
+     * whether or not that person still has an account.
+     */
+    tenantId: uuid("tenant_id").notNull(),
+    orderId: uuid("order_id").notNull(),
     /** Null when the actor is the system rather than a person. */
-    actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    actorUserId: text("actor_user_id"),
     fromStatus: orderStatus("from_status"),
     toStatus: orderStatus("to_status").notNull(),
     note: text("note"),
+    /**
+     * Six years, on the same clock as the evidence and the access log.
+     *
+     * The database default exists only to backfill rows written before this column did;
+     * the application always supplies it from `retainUntil()`, so there is one source for
+     * the period. It is also what the append-only trigger reads to decide whether a
+     * DELETE is lawful — the retention policy is enforced by Postgres, not by remembering.
+     */
+    retainUntil: timestamp("retain_until", { withTimezone: true })
+      .notNull()
+      .default(sql`now() + interval '6 years'`),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     orderIdx: index("order_events_order_idx").on(t.orderId, t.createdAt),
     tenantIdx: index("order_events_tenant_idx").on(t.tenantId),
+    sweepIdx: index("order_events_sweep_idx").on(t.retainUntil),
   }),
 );
 

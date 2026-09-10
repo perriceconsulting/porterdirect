@@ -30,6 +30,9 @@ import {
   type OrderType,
 } from "@porterdirect/orders";
 import { formatUsdCents } from "@porterdirect/billing";
+// One source for the retention period — the same helper the evidence ledger and the
+// access log use, so the three cannot drift apart.
+import { retainUntil } from "./retention";
 import { looksLikeEmail } from "./delivery-receipt";
 import {
   addressLabels,
@@ -208,6 +211,7 @@ export async function createOrder(db: Db, input: CreateOrderInput): Promise<Orde
         fromStatus: null,
         toStatus: "pending",
         note: "Order created",
+        retainUntil: retainUntil(),
       });
       return created;
     } catch (err) {
@@ -384,6 +388,7 @@ export async function transitionOrder(
           .filter(Boolean)
           .join(" — ")
       : args.note?.trim() || null,
+     retainUntil: retainUntil(),
   });
 
   return updated;
@@ -607,6 +612,7 @@ export async function claimOrder(
     fromStatus: "pending",
     toStatus: "assigned",
     note: "Claimed by driver",
+    retainUntil: retainUntil(),
   });
 
   return claimed;
@@ -728,6 +734,7 @@ export async function redispatchOrder(
     fromStatus: null,
     toStatus: "pending",
     note: `Re-dispatch of ${original.reference}`,
+    retainUntil: retainUntil(),
   });
 
   return created;

@@ -16,7 +16,6 @@ import { readFileSync } from "node:fs";
 import { eq, like } from "drizzle-orm";
 import {
   createDbClient,
-  orderEvents,
   orders,
   tenantMembers,
   tenants,
@@ -79,7 +78,10 @@ test.describe("closing and re-dispatching a job", () => {
 
   test.afterAll(async () => {
     if (!db || !tenantId) return;
-    await db.delete(orderEvents).where(eq(orderEvents.tenantId, tenantId));
+    // Audit rows are NOT deleted here, and cannot be: `order_events` is append-only in
+    // the database and its rows are retained for six years. Test and demo runs therefore
+    // leave their custody trail behind, which is the same thing production does and is
+    // the point of the guarantee — a trail a cleanup script can erase is not a trail.
     await db.delete(orders).where(eq(orders.tenantId, tenantId));
     await db.delete(tenantMembers).where(eq(tenantMembers.tenantId, tenantId));
     await db.delete(tenants).where(eq(tenants.id, tenantId));
