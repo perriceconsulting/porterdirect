@@ -30,6 +30,7 @@ agencies) who run the physical work under their own brand + domain.
 | Env file reading | [scripts/lib/load-env.sh](scripts/lib/load-env.sh) | The only place a secrets file is read; parses as data, never sourced |
 | Authorization policy | [packages/auth/src/permissions.ts](packages/auth/src/permissions.ts) | The role→permission matrix; pure, exhaustive, no inheritance chain |
 | Chain of custody | [packages/db/drizzle/0022_order_events_append_only.sql](packages/db/drizzle/0022_order_events_append_only.sql) | Append-only enforced by a TRIGGER, not a comment. No foreign keys. DELETE is dated, not forbidden — the retention rule lives in Postgres |
+| Evidence export | [apps/marketing/lib/export-pack.ts](apps/marketing/lib/export-pack.ts) | Three CSVs a courier hands their client. Every value goes through `csv.ts`, which neutralises spreadsheet formulas |
 | Access auditing | [apps/marketing/lib/access-log.ts](apps/marketing/lib/access-log.ts) | `openEvidence` is the ONLY audited path to a stored object; the primitive is named `presignProofDownloadUnaudited` and `verify:conventions` fails on any caller outside a tiny allowlist |
 | Evidence retention | [apps/marketing/lib/retention.ts](apps/marketing/lib/retention.ts) | Six years, stored PER OBJECT at write time. `storage_objects` is the durable index of bucket contents and deliberately carries NO foreign keys |
 | Proof-of-delivery storage | [apps/marketing/lib/storage.ts](apps/marketing/lib/storage.ts) | Neon S3-compatible, private bucket. Presigned both ways; keys persisted, URLs never |
@@ -386,6 +387,32 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
   an invitation deliberately creates NO tenant: membership comes from the invitation and
   nowhere else, so the path cannot mint an owner. The invited address is also typed rather
   than pre-filled, so the page still names nobody to whoever holds a forwarded link.
+- **THE APP CLOCK AND THE DATABASE CLOCK ARE DIFFERENT MACHINES, and here they differ by
+  1.4 SECONDS.** `orders.created_at` defaults to Postgres `now()` while `delivered_at` was
+  set with `new Date()` in Node, so any delivery completed inside that window recorded as
+  **delivered before it was created**. Found in a real export, where a hospital would read
+  it — and a chain-of-custody document containing an impossible event is not one anybody
+  accepts. Order timestamps now come from `dbNow()`. The database wins because there is
+  exactly one of it, while serverless instances are many and drift independently. General
+  rule: **two timestamps that will ever be COMPARED must come from the same clock.**
+  Verified by reverting one write and watching a delivery land 1.1s before its own
+  creation.
+- **A CSV export is a code-execution surface.** Excel, LibreOffice and Sheets evaluate a
+  cell beginning `=`, `+`, `-`, `@`, tab or CR as a FORMULA. Every value in these exports
+  is typed by a person — a dispatcher today, a customer once they book their own jobs — and
+  the file is opened by a client's procurement team. `csv.ts` prefixes an apostrophe to
+  anything that would otherwise be interpreted, and only to those, so ordinary text is not
+  littered. Verified by removing the neutralisation and watching four tests fail.
+- **A formatter written for a price list is wrong in a ledger.** `formatUsdCents` drops a
+  whole-dollar ".00" — right for "$199" on a pricing page, wrong when the export put "$62"
+  directly above "$48.50" in one column that a client reconciles against their own records.
+  `formatUsdCentsExact` is the third caller, which is where this project's own rule says to
+  extract rather than tolerate.
+- **A literal U+FEFF cannot be written through this toolchain.** The export needs a UTF-8
+  BOM so Excel on Windows renders accented names rather than mojibake, and three separate
+  attempts to write `﻿` as an escape produced the actual character instead — which
+  ESLint then rejected as irregular whitespace. `String.fromCharCode(0xfeff)` keeps the
+  source pure ASCII and legible. Worth knowing before spending the same twenty minutes.
 - **Off-shift / post-delivery tracking** (driver app, later): location visibility is wired to
   shift/order status; continuing to track after off-shift is a legal liability, not a bug.
 - **Optimistic/offline updates that never reconcile** (driver app, later): every optimistic or

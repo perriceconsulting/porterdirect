@@ -7,7 +7,7 @@
  * data. If a function in this file does not take a tenant id, it is a bug.
  */
 import { randomBytes } from "node:crypto";
-import { and, desc, eq, isNull, notInArray } from "drizzle-orm";
+import { and, desc, eq, isNull, notInArray, sql } from "drizzle-orm";
 import {
   isUniqueViolation,
   orderDeclines,
@@ -77,6 +77,26 @@ export interface CreateOrderInput {
    */
   readonly redispatchedFromOrderId?: string;
 }
+
+/**
+ * The DATABASE's clock, for every timestamp that lands on an order.
+ *
+ * Not a stylistic preference — it fixes a real defect found in an export. `created_at`
+ * defaults to Postgres `now()` while `delivered_at` was set with `new Date()` in Node,
+ * and those are two different machines. Measured against this project's own database the
+ * skew is about **1.4 seconds**, consistently, with the database ahead. So any delivery
+ * completed within that window recorded as DELIVERED BEFORE IT WAS CREATED — visible in
+ * the evidence pack, where a hospital reads it, and there is no recovering a
+ * chain-of-custody document that contains an impossible event.
+ *
+ * The database wins because there is exactly one of it. Serverless instances are many and
+ * their clocks drift independently, and the ordering that matters — indexes, sorts, "what
+ * happened first" — is evaluated there anyway.
+ *
+ * The general rule this stands for: two timestamps that will ever be COMPARED must come
+ * from the same clock.
+ */
+const dbNow = () => sql`now()`;
 
 /**
  * A short reference an operator can read down a phone: no vowels, so it cannot spell
@@ -353,8 +373,8 @@ export async function transitionOrder(
     .update(orders)
     .set({
       status: args.to,
-      updatedAt: new Date(),
-      ...(args.to === "delivered" ? { deliveredAt: new Date() } : {}),
+      updatedAt: dbNow(),
+      ...(args.to === "delivered" ? { deliveredAt: dbNow() } : {}),
       ...(closing
         ? { closureReason: args.reason ?? null, closureNote: args.note?.trim() || null }
         : {}),
@@ -587,7 +607,7 @@ export async function claimOrder(
 
   const [claimed] = await db
     .update(orders)
-    .set({ assignedUserId: args.userId, status: "assigned", updatedAt: new Date() })
+    .set({ assignedUserId: args.userId, status: "assigned", updatedAt: dbNow() })
     .where(
       and(
         eq(orders.tenantId, args.tenantId),

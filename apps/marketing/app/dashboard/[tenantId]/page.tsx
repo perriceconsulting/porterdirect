@@ -80,10 +80,21 @@ export default async function Console({
   // Pricing is a settings decision, not a dispatch one — a dispatcher moves work, they
   // do not set what the firm charges. Same permission the action re-checks.
   const maySetPricing = can(membership.role, "tenant:settings");
+  // The same permission the export route re-checks: a fleet-wide read of customer data,
+  // so a driver confined to their own work cannot download the whole company's history.
+  const seesEverything = can(membership.role, "orders:read:all");
   const rateCard = maySetPricing ? await loadRateCard(db, tenantId) : null;
   const plan = subscription ? getPlan(subscription.planId) : null;
   const monthly =
     subscription && plan ? computeMonthlyTotalCents(plan.id, subscription.seatCount) : null;
+
+  // Default the export to the last full month, which is the period a client actually
+  // asks about. Computed here rather than in the form so both inputs agree.
+  const today = new Date();
+  const defaultTo = today.toISOString().slice(0, 10);
+  const monthAgo = new Date(today.getTime());
+  monthAgo.setUTCMonth(monthAgo.getUTCMonth() - 1);
+  const defaultFrom = monthAgo.toISOString().slice(0, 10);
 
   const domainConnected = Boolean(tenant.host);
   const teamInvited = team.length > 1 || pending.length > 0;
@@ -436,6 +447,55 @@ export default async function Console({
                 <div className="form-actions">
                   <button className="btn" type="submit">
                     Save
+                  </button>
+                </div>
+              </form>
+            </section>
+          ) : null}
+
+          {seesEverything ? (
+            <section className="panel">
+              <h2 className="panel-title">Evidence pack</h2>
+              <p className="sub">
+                What you hand a client. Three files: the deliveries you ran for them, the
+                chain of custody for each one, and who has opened the evidence since.
+              </p>
+              {/*
+                A plain GET form, so each button is a normal download with no JavaScript.
+                The route re-authorizes and records the download as an access in its own
+                right — taking a period's records out is the largest read the product
+                offers, and an audit log that could not see it would be a strange thing to
+                sell.
+              */}
+              <form method="get" action={`/dashboard/${tenantId}/exports`} className="entry-form">
+                <fieldset className="field-group">
+                  <legend>Period</legend>
+                  <div className="row-2">
+                    <div className="field">
+                      <label htmlFor="from">From</label>
+                      <input id="from" name="from" type="date" defaultValue={defaultFrom} required />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="to">To</label>
+                      <input id="to" name="to" type="date" defaultValue={defaultTo} required />
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="kind">Document</label>
+                    <select id="kind" name="kind" defaultValue="deliveries">
+                      <option value="deliveries">Deliveries — what you carried, and when</option>
+                      <option value="custody">Chain of custody — who held it, and when</option>
+                      <option value="access">Access log — who has opened the evidence</option>
+                    </select>
+                    <span className="hint">
+                      Opens in a spreadsheet. The access log names your own staff, so send
+                      it deliberately rather than with every invoice.
+                    </span>
+                  </div>
+                </fieldset>
+                <div className="form-actions">
+                  <button className="btn btn-primary" type="submit">
+                    Download
                   </button>
                 </div>
               </form>

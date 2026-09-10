@@ -413,7 +413,8 @@ Settled 2026-09-10. The sequence is a dependency chain, not a priority list.
    5. ~~Stop the tenant/order cascade destroying custody records~~ — **done**, all three
       foreign keys removed.
    6. Extend custody to **field edits**, not just status transitions.
-   7. **Export pack.** Not a late deliverable: a custody trail is invisible until a client
+   7. ~~Export pack~~ — **done.** Three CSVs: deliveries, chain of custody, and who has
+      opened the evidence. Not a late deliverable: a custody trail is invisible until a client
       asks for it, so the export is the artifact that makes the value legible. A courier
       can show an on-time report to a prospect *before* they hold a contract.
 3. **Native driver app** — scanning, offline queue, push. Needs a parcel entity, which

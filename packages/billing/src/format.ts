@@ -47,3 +47,32 @@ export function parseUsdToCents(input: string): number | null {
   const [whole, fraction = ""] = trimmed.replace(/,/g, "").split(".");
   return Number.parseInt(whole!, 10) * 100 + Number.parseInt(fraction.padEnd(2, "0"), 10);
 }
+
+/**
+ * The same amount, always with cents.
+ *
+ * `formatUsdCents` drops a whole-dollar ".00" because it was written for a CATALOGUE
+ * price — "$199", not "$199.00" — and that is right on a pricing page. It is wrong in a
+ * ledger. The evidence pack put "$62" directly above "$48.50" in one column, which a
+ * procurement team reads as a financial document and reconciles against their own
+ * records; a column whose precision changes row by row invites exactly the question you
+ * do not want asked about an invoice.
+ *
+ * This is the third caller rather than the second, which is the point at which the
+ * project's own rule says to extract rather than tolerate: catalogue display, transactional
+ * display, and now export. Both formatters share the integer-cents discipline and neither
+ * routes through a float.
+ */
+export function formatUsdCentsExact(cents: number): string {
+  if (!Number.isInteger(cents)) {
+    // Same refusal as above: a fractional amount here means a float leaked in upstream,
+    // and rounding it would hide that at the moment it becomes a wrong number on a bill.
+    throw new Error(`Amount must be integer cents, received ${cents}`);
+  }
+  const negative = cents < 0;
+  const abs = Math.abs(cents);
+  const dollars = Math.trunc(abs / 100);
+  const remainder = abs % 100;
+  const body = `$${dollars.toLocaleString("en-US")}.${String(remainder).padStart(2, "0")}`;
+  return negative ? `-${body}` : body;
+}

@@ -29,7 +29,13 @@ export type AccessAction =
   | "proof.photo"
   | "proof.signature"
   | "proof.pdf"
-  | "tracking.view";
+  | "tracking.view"
+  /**
+   * A period's worth of records copied out at once — the largest single read the product
+   * offers. It would be strange to sell an access log that could not see the one action
+   * that takes everything.
+   */
+  | "export.pack";
 
 /**
  * Who is asking.
