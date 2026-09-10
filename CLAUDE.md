@@ -373,6 +373,19 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
   served. The only check that caught it was a behavioural one: hitting the production
   tracking page and finding no audit row where the new build would have written one. After
   a deploy, assert on something the new code DOES, not on a status code.
+- **The team-invite feature was unusable by every driver, and 523 tests could not see
+  it.** The invite page offered only "Sign in to accept". An invited driver has no
+  account, and the only other route off the sign-in page is "Start a subscription" — the
+  OPERATOR path, which would have given them their own tenant and a Stripe checkout. So
+  the feature worked for nobody it was built for. Found by a real person clicking a real
+  invitation and being told their email and password did not match an account. Every
+  existing test signed a user up FIRST and then invited them, which is the one order a
+  real driver never experiences — **when a flow has a prerequisite, test it in the order
+  the user meets it, not the order that is convenient to set up.**
+- **An invited person must not be handed the operator signup.** Creating an account from
+  an invitation deliberately creates NO tenant: membership comes from the invitation and
+  nowhere else, so the path cannot mint an owner. The invited address is also typed rather
+  than pre-filled, so the page still names nobody to whoever holds a forwarded link.
 - **Off-shift / post-delivery tracking** (driver app, later): location visibility is wired to
   shift/order status; continuing to track after off-shift is a legal liability, not a bug.
 - **Optimistic/offline updates that never reconcile** (driver app, later): every optimistic or

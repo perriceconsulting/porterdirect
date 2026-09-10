@@ -10,7 +10,8 @@ import { createDbClient } from "@porterdirect/db";
 import { SiteHeader } from "../../_components/site-header";
 import { getAuth } from "../../../lib/auth";
 import { findInvitationByToken } from "../../../lib/invitations";
-import { acceptInvitationAction } from "./actions";
+import { PasswordField } from "../../_components/password-field";
+import { acceptInvitationAction, acceptInviteWithNewAccountAction } from "./actions";
 
 export const metadata = { title: "Invitation — PorterDirect" };
 export const dynamic = "force-dynamic";
@@ -71,18 +72,62 @@ export default async function AcceptInvite({
             </>
           ) : !session?.user ? (
             <>
+              {/*
+                CREATING an account is the primary action here, not signing in, and that
+                ordering is the fix. Almost everyone who follows one of these links is a
+                driver who has never used the product — the page used to offer only "sign
+                in to accept", and the only other route off the sign-in page is "Start a
+                subscription", which is the OPERATOR path and would have given them their
+                own tenant and a Stripe checkout. The whole team-invite feature was
+                therefore unusable by every driver.
+              */}
               <p className="sub">
-                Sign in to accept this invitation. It was sent to a specific address and
-                only works for that account.
+                Create your account to accept this invitation. Use the address it was sent
+                to — it only works for that one.
               </p>
-              <div className="form-actions">
-                <a
-                  className="btn btn-primary"
-                  href={`/signin?next=${encodeURIComponent(`/invite/${token}`)}`}
-                >
+
+              <form action={acceptInviteWithNewAccountAction} className="auth-form">
+                <input type="hidden" name="token" value={token} />
+                <div className="row-2">
+                  <div className="field">
+                    <label htmlFor="firstName">First name</label>
+                    <input id="firstName" name="firstName" autoComplete="given-name" required />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="lastName">Last name</label>
+                    <input id="lastName" name="lastName" autoComplete="family-name" required />
+                  </div>
+                </div>
+                <div className="field">
+                  <label htmlFor="email">Email</label>
+                  {/*
+                    Typed rather than pre-filled from the token. The invited address is NOT
+                    displayed before anyone has proved they hold the mailbox — this page's
+                    whole posture is to say as little as possible to whoever holds a
+                    forwarded link, and the email that carried the link already tells the
+                    legitimate person which address to use.
+                  */}
+                  <input id="email" name="email" type="email" autoComplete="email" required />
+                </div>
+                <PasswordField
+                  name="password"
+                  label="Password"
+                  autoComplete="new-password"
+                  hint="At least 12 characters. A short phrase you can remember works well."
+                />
+                <div className="form-actions">
+                  <button className="btn btn-primary" type="submit">
+                    Create account and accept
+                  </button>
+                </div>
+              </form>
+
+              <p className="alt">
+                Already have an account?{" "}
+                <a href={`/signin?next=${encodeURIComponent(`/invite/${token}`)}`}>
                   Sign in to accept
                 </a>
-              </div>
+              </p>
             </>
           ) : !matches ? (
             <>
