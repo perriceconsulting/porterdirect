@@ -695,6 +695,66 @@ export const orders = pgTable(
  * is deliberately no update path, because an editable audit log is not an audit log.
  */
 /**
+ * Who looked at what, and when.
+ *
+ * HIPAA §164.312(b) — audit controls — and the single thing the competitor research found
+ * no incumbent advertising. Before this, a presigned URL to a delivery photo was handed
+ * out with no record at all: no note of who asked, for which order, or when. Every
+ * `/t/{token}` open was likewise invisible. A product sold on evidence could not evidence
+ * its own access.
+ *
+ * NO FOREIGN KEYS, for the same reason `storage_objects` has none: an audit log that a
+ * cascade can erase is not an audit log. `tenant_id`, `order_id` and `actor_user_id` are
+ * historical facts, true whether or not those rows still exist — and the moment somebody
+ * deletes a tenant is exactly the moment the trail matters.
+ *
+ * Retained on the same six-year clock as the evidence itself, stored per row rather than
+ * computed, so the log cannot quietly outlive the thing it describes or be shortened
+ * retroactively.
+ */
+export const accessActorKind = pgEnum("access_actor_kind", ["member", "public_link"]);
+
+export const accessEvents = pgTable(
+  "access_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull(),
+    orderId: uuid("order_id"),
+    /**
+     * `member` carries a user id. `public_link` never does — a tracking token grants a
+     * stranger a view and there is no identity behind it, which is itself the fact worth
+     * recording. Storing null rather than inventing a pseudo-user keeps "we do not know
+     * who this was" honest.
+     */
+    actorKind: accessActorKind("actor_kind").notNull(),
+    actorUserId: text("actor_user_id"),
+    /** What was reached: `proof.photo`, `proof.signature`, `proof.pdf`, `tracking.view`. */
+    action: text("action").notNull(),
+    /** The object key, when the access was to a stored object rather than a page. */
+    objectKey: text("object_key"),
+    /**
+     * Recorded because "the same delivery's evidence was opened forty times from three
+     * countries" is the question this table exists to answer. It is personal data in its
+     * own right, which is why it expires on the same clock as everything else here.
+     */
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    retainUntil: timestamp("retain_until", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    /** The operator's question: everything that touched this job. */
+    orderIdx: index("access_events_order_idx").on(t.orderId, t.createdAt),
+    tenantIdx: index("access_events_tenant_idx").on(t.tenantId, t.createdAt),
+    actorIdx: index("access_events_actor_idx").on(t.actorUserId, t.createdAt),
+    sweepIdx: index("access_events_sweep_idx").on(t.retainUntil),
+  }),
+);
+
+export type AccessEvent = typeof accessEvents.$inferSelect;
+export type NewAccessEvent = typeof accessEvents.$inferInsert;
+
+/**
  * The durable index of what is in the object store.
  *
  * THIS TABLE EXISTS BECAUSE OF A SPECIFIC DEFECT. `order_proofs` cascade-deletes from both

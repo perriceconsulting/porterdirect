@@ -29,6 +29,7 @@ agencies) who run the physical work under their own brand + domain.
 | DB migrations | [packages/db/drizzle/](packages/db/drizzle/) | GENERATED from `schema.ts` via `npm run db:generate` — never hand-write DDL |
 | Env file reading | [scripts/lib/load-env.sh](scripts/lib/load-env.sh) | The only place a secrets file is read; parses as data, never sourced |
 | Authorization policy | [packages/auth/src/permissions.ts](packages/auth/src/permissions.ts) | The role→permission matrix; pure, exhaustive, no inheritance chain |
+| Access auditing | [apps/marketing/lib/access-log.ts](apps/marketing/lib/access-log.ts) | `openEvidence` is the ONLY audited path to a stored object; the primitive is named `presignProofDownloadUnaudited` and `verify:conventions` fails on any caller outside a tiny allowlist |
 | Evidence retention | [apps/marketing/lib/retention.ts](apps/marketing/lib/retention.ts) | Six years, stored PER OBJECT at write time. `storage_objects` is the durable index of bucket contents and deliberately carries NO foreign keys |
 | Proof-of-delivery storage | [apps/marketing/lib/storage.ts](apps/marketing/lib/storage.ts) | Neon S3-compatible, private bucket. Presigned both ways; keys persisted, URLs never |
 | Customer tracking link | [apps/marketing/app/t/[token]/page.tsx](apps/marketing/app/t/[token]/page.tsx) | The only surface with no login. Operator-branded; token is the whole authorization |
@@ -308,6 +309,27 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
   re-dates every historical object the day someone edits the constant — including
   shortening it, which destroys evidence early and leaves no trace the commitment was
   ever different.
+- **Handing out a signed URL IS the access, and six call sites did it with no record.**
+  A presigned link to a delivery photo was minted by the console, the driver page, the
+  public image proxy and two certificate routes, none of which logged who asked, for which
+  order, or when — HIPAA §164.312(b), and the one control the competitor research found no
+  incumbent advertising. The fix is structural rather than six log statements: the
+  primitive is now `presignProofDownloadUnaudited`, `openEvidence` is the ordinary path,
+  and `verify:conventions` fails on any caller outside a four-entry allowlist. Verified by
+  planting a seventh caller and watching the guard fail. A rule a checker enforces
+  survives; a rule in a comment erodes.
+- **The audit log FAILS CLOSED, and that is the half most likely to be "helpfully"
+  relaxed.** If the audit write fails, `openEvidence` produces no URL and the caller sees
+  an error. The alternative serves PHI with no record, silently, which is the exact gap
+  being closed — for a product whose pitch is "we can evidence every access", an access
+  that cannot be evidenced must not happen. The cost is that a database problem blocks
+  evidence viewing: loud, visible and recoverable, which is the failure you want. Pinned
+  by a test that passes a deliberately broken client.
+- **One document assembled from two objects is ONE access.** The certificate routes fetch
+  both images to build a single PDF and log `proof.pdf` once, using the unaudited
+  primitive for the internal fetches. Logging each fetch would turn one download into
+  three audit rows and make the log describe our plumbing rather than the reader's
+  behaviour. This is why the conventions allowlist has four entries rather than two.
 - **Off-shift / post-delivery tracking** (driver app, later): location visibility is wired to
   shift/order status; continuing to track after off-shift is a legal liability, not a bug.
 - **Optimistic/offline updates that never reconcile** (driver app, later): every optimistic or

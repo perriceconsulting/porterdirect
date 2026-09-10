@@ -21,7 +21,8 @@ import {
   pickupAddressOf,
 } from "../../../../../../lib/orders";
 import { buildProofPdf } from "../../../../../../lib/proof-pdf";
-import { presignProofDownload } from "../../../../../../lib/storage";
+import { presignProofDownloadUnaudited } from "../../../../../../lib/storage";
+import { recordAccess } from "../../../../../../lib/access-log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,7 +31,12 @@ export const dynamic = "force-dynamic";
 async function fetchBytes(key: string | null): Promise<Uint8Array | null> {
   if (!key) return null;
   try {
-    const res = await fetch(await presignProofDownload(key, 120));
+    // The UNAUDITED primitive, and correctly so. One certificate download is ONE access
+    // by the reader, logged once below as `proof.pdf`. These two fetches are our own
+    // assembly of that document, not separate reads by them — logging each would turn a
+    // single download into three audit rows and make the log describe our plumbing
+    // rather than their behaviour.
+    const res = await fetch(await presignProofDownloadUnaudited(key, 120));
     if (!res.ok) return null;
     return new Uint8Array(await res.arrayBuffer());
   } catch {
@@ -42,7 +48,7 @@ async function fetchBytes(key: string | null): Promise<Uint8Array | null> {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ tenantId: string; orderId: string }> },
 ): Promise<Response> {
   const { tenantId, orderId } = await params;
@@ -64,6 +70,17 @@ export async function GET(
 
   const proof = await findProof(db, tenantId, orderId);
   if (!proof) return new Response("No proof of delivery has been recorded", { status: 404 });
+
+  // Logged before the document is assembled, and it fails closed. A member downloading a
+  // certificate is not exempt from the audit trail — the trail exists precisely to answer
+  // "which of our own staff pulled this patient's delivery record".
+  await recordAccess(db, {
+    accessor: { kind: "member", tenantId, userId },
+    action: "proof.pdf",
+    orderId,
+    ipAddress: request.headers.get("x-forwarded-for"),
+    userAgent: request.headers.get("user-agent"),
+  });
 
   // Scoped in the WHERE clause. Selecting every tenant and picking one in JavaScript is
   // the shape this codebase keeps recording as the way a leak gets written.

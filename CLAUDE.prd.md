@@ -335,7 +335,7 @@ this document in one place and found four requirements with no foundation at all
 | Proof of delivery | **BUILT** | Capture verified on a real phone. |
 | Chain of custody | **PARTIAL** | See below. |
 | **Retention** | **BUILT 2026-09-10** | Was worse than absent: deleting an order orphaned the POD photo and signature with no key left to find them — PHI we could neither account for nor destroy on request. Now `storage_objects`, a ledger of bucket contents that survives any cascade, with a six-year date stored per object and a sweep that destroys on time and records that it did. Costed before it was promised: ~$10/mo per Direct Courier tenant at year six, ~$102 at Agency scale. |
-| **Access logging** | **NOT BUILT** | A presigned POD read leaves no trace — no record of who fetched a delivery photo, when, or for which order. Every `/t/{token}` open is likewise unlogged. This is HIPAA §164.312(b). |
+| **Access logging** | **BUILT 2026-09-10** | Every read of stored evidence and every tracking-link open now writes an audit row: who, which order, when, from where. Enforced structurally — the unaudited primitive is named as such and `verify:conventions` fails on any caller outside a four-entry allowlist. Fails closed: no audit row, no URL. **This is the wedge** (§9.2). |
 | Temperature capture | **NOT BUILT** | Zero occurrences repo-wide. `order_proofs` is the nearest shape but its unique-per-order index cannot hold a pickup *and* a handoff reading. |
 | On-time reporting | **NOT BUILT** | `scheduledFor` and `deliveredAt` both exist and are **never compared**. No aggregate query anywhere. "On time" is not definable without a tolerance the schema lacks. |
 
@@ -407,7 +407,7 @@ Settled 2026-09-10. The sequence is a dependency chain, not a priority list.
       from the original wording: there is **no object-storage lifecycle rule**, because a
       bucket-level expiry deletes without recording that it did — which leaves the same
       "cannot account for it" problem pointing the other way.
-   3. **Access logging** — who read a POD, who opened a tracking link, when.
+   3. ~~Access logging~~ — **done.** Who read a POD, who opened a tracking link, when.
    4. **Enforce append-only in the database** — trigger plus revoked UPDATE/DELETE.
    5. Stop the tenant/order cascade destroying custody records.
    6. Extend custody to **field edits**, not just status transitions.

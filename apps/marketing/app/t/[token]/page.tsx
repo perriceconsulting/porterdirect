@@ -18,6 +18,7 @@
  * A wrong or expired token says the same thing as a well-formed one that matches nothing.
  * Distinguishing them would turn this into an oracle for guessing links.
  */
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { createDbClient, tenants } from "@porterdirect/db";
@@ -28,6 +29,7 @@ import {
   findOrderByPublicToken,
   findProof,
 } from "../../../lib/orders";
+import { recordAccess } from "../../../lib/access-log";
 
 export const dynamic = "force-dynamic";
 
@@ -118,6 +120,22 @@ export default async function TrackDelivery({
     .where(eq(tenants.id, order.tenantId))
     .limit(1);
   if (!tenant) notFound();
+
+  // Opening the tracking link is itself an access worth recording. The page carries the
+  // destination address and, once delivered, the recipient's name — and the token is a
+  // bearer credential that can be forwarded, so "how many times, from where" is precisely
+  // the question an operator is asked when a customer disputes who saw what.
+  //
+  // Headers rather than a request object: a server component has no `request`, and
+  // `headers()` is the supported way to reach them.
+  const h = await headers();
+  await recordAccess(db, {
+    accessor: { kind: "public_link", tenantId: order.tenantId },
+    action: "tracking.view",
+    orderId: order.id,
+    ipAddress: h.get("x-forwarded-for"),
+    userAgent: h.get("user-agent"),
+  });
 
   const proof = await findProof(db, order.tenantId, order.id);
   // Served from OUR origin, never the storage provider's signed URL. A direct URL put

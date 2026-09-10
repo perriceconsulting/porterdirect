@@ -104,5 +104,30 @@ else
   note "ok"
 fi
 
+# 5) every read of stored evidence is audited
+#
+# `presignProofDownloadUnaudited` hands out a URL to a delivery photo, and handing out
+# that URL IS the access. Six call sites used to do it with no record of who asked. The
+# ordinary path is `openEvidence`, which writes the audit row first and refuses if it
+# cannot — so this check exists to stop a seventh unaudited caller appearing quietly.
+#
+# The allowlist is deliberately tiny and each entry has a reason:
+#   lib/storage.ts            declares it
+#   lib/access-log.ts         wraps it — this is the audited path
+#   the two proof.pdf routes  assemble ONE document from two objects and log once, so
+#                             logging each fetch would describe our plumbing rather than
+#                             the reader's behaviour
+note "5) reads of stored evidence go through the audited path"
+unaudited=$(git grep -ln 'presignProofDownloadUnaudited' -- 'apps/**/*.ts' 'apps/**/*.tsx' 2>/dev/null   | grep -v -e 'apps/marketing/lib/storage.ts'             -e 'apps/marketing/lib/access-log.ts'             -e 'proof.pdf/route.ts'             -e 'apps/marketing/test/storage.test.ts' || true)
+if [ -n "$unaudited" ]; then
+  note "FAIL — unaudited evidence reads outside the allowlist:"
+  printf '%s
+' "$unaudited" | sed 's/^/     /'
+  note "     use openEvidence() from lib/access-log.ts instead"
+  fail=1
+else
+  note "ok"
+fi
+
 if [ "$fail" -ne 0 ]; then echo "verify:conventions FAILED"; exit 1; fi
 echo "verify:conventions passed"

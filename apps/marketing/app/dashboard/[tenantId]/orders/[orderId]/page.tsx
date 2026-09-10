@@ -34,7 +34,8 @@ import {
   listOrderEvents,
   pickupAddressOf,
 } from "../../../../../lib/orders";
-import { isStorageConfigured, presignProofDownload } from "../../../../../lib/storage";
+import { isStorageConfigured } from "../../../../../lib/storage";
+import { openEvidence } from "../../../../../lib/access-log";
 import { ProofCapture } from "../../../../_components/proof-capture";
 
 export const dynamic = "force-dynamic";
@@ -71,9 +72,20 @@ export default async function OrderDetail({
   // Evidence, and short-lived URLs to look at it. The bucket is private, so these are
   // signed per render and expire; a permanent link to a delivery photo is the leak.
   const proof = await findProof(db, tenantId, orderId);
-  const proofPhotoUrl = proof?.photoKey ? await presignProofDownload(proof.photoKey) : null;
+  // Through `openEvidence`, so each render writes an audit row naming this member before
+  // any URL exists. Rendering the page IS the access — the operator has seen the photo by
+  // the time the markup reaches them.
+  const viewer = { kind: "member", tenantId, userId } as const;
+  const proofPhotoUrl = proof?.photoKey
+    ? await openEvidence(db, { key: proof.photoKey, accessor: viewer, action: "proof.photo", orderId })
+    : null;
   const proofSignatureUrl = proof?.signatureKey
-    ? await presignProofDownload(proof.signatureKey)
+    ? await openEvidence(db, {
+        key: proof.signatureKey,
+        accessor: viewer,
+        action: "proof.signature",
+        orderId,
+      })
     : null;
   // Offered when the job is out for delivery and the driver may update it. Capture is
   // how a delivery COMPLETES, so it replaces a bare "Delivered" button rather than

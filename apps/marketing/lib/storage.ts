@@ -168,7 +168,17 @@ export async function presignProofUpload(args: {
  * Fifteen minutes: long enough to render a page and for someone to look at the photo,
  * short enough that a URL copied out of devtools and pasted elsewhere stops working.
  */
-export async function presignProofDownload(key: string, expiresIn = 900): Promise<string> {
+/**
+ * A short-lived URL to one stored object.
+ *
+ * NAMED "UNAUDITED" ON PURPOSE. Handing out this URL IS an access to protected evidence,
+ * and until 2026-09-10 six call sites did it with no record of who asked or for what.
+ * The ordinary path is `openEvidence` in `lib/access-log.ts`, which writes the audit row
+ * first and refuses if it cannot. This export exists for the storage round-trip tests and
+ * for `openEvidence` itself; `verify:conventions` fails on any other reference, so a new
+ * caller has to either name an accessor or deliberately type the word "unaudited".
+ */
+export async function presignProofDownloadUnaudited(key: string, expiresIn = 900): Promise<string> {
   const config = readConfig();
   const command = new GetObjectCommand({ Bucket: config.bucket, Key: key });
   return getSignedUrl(client(config), command, { expiresIn });

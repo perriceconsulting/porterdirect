@@ -18,13 +18,13 @@
  */
 import { createDbClient } from "@porterdirect/db";
 import { findOrderByPublicToken, findProof } from "../../../../lib/orders";
-import { presignProofDownload } from "../../../../lib/storage";
+import { openEvidence } from "../../../../lib/access-log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ token: string; kind: string }> },
 ): Promise<Response> {
   const { token, kind } = await params;
@@ -41,7 +41,21 @@ export async function GET(
   const key = kind === "photo" ? proof?.photoKey : proof?.signatureKey;
   if (!key) return new Response("Not found", { status: 404 });
 
-  const upstream = await fetch(await presignProofDownload(key, 120));
+  // A public link has no identity behind it, and that absence is itself the fact worth
+  // recording — "a stranger holding this link opened the photo" is exactly the question
+  // an operator gets asked after a dispute. IP and user agent are taken from the request
+  // where present and recorded as absent where not, never invented.
+  const signed = await openEvidence(db, {
+    key,
+    accessor: { kind: "public_link", tenantId: order.tenantId },
+    action: kind === "photo" ? "proof.photo" : "proof.signature",
+    orderId: order.id,
+    ipAddress: request.headers.get("x-forwarded-for"),
+    userAgent: request.headers.get("user-agent"),
+    expiresIn: 120,
+  });
+
+  const upstream = await fetch(signed);
   if (!upstream.ok) return new Response("Not found", { status: 404 });
 
   return new Response(upstream.body, {

@@ -19,7 +19,8 @@ import {
   pickupAddressOf,
 } from "../../../../lib/orders";
 import { buildProofPdf } from "../../../../lib/proof-pdf";
-import { presignProofDownload } from "../../../../lib/storage";
+import { presignProofDownloadUnaudited } from "../../../../lib/storage";
+import { recordAccess } from "../../../../lib/access-log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,7 +28,12 @@ export const dynamic = "force-dynamic";
 async function fetchBytes(key: string | null): Promise<Uint8Array | null> {
   if (!key) return null;
   try {
-    const res = await fetch(await presignProofDownload(key, 120));
+    // The UNAUDITED primitive, and correctly so. One certificate download is ONE access
+    // by the reader, logged once below as `proof.pdf`. These two fetches are our own
+    // assembly of that document, not separate reads by them — logging each would turn a
+    // single download into three audit rows and make the log describe our plumbing
+    // rather than their behaviour.
+    const res = await fetch(await presignProofDownloadUnaudited(key, 120));
     if (!res.ok) return null;
     return new Uint8Array(await res.arrayBuffer());
   } catch {
@@ -37,7 +43,7 @@ async function fetchBytes(key: string | null): Promise<Uint8Array | null> {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ token: string }> },
 ): Promise<Response> {
   const { token } = await params;
@@ -56,6 +62,17 @@ export async function GET(
     .where(eq(tenants.id, order.tenantId))
     .limit(1);
   if (!tenant) return new Response("Not found", { status: 404 });
+
+  // Logged BEFORE the document is assembled: if the audit write fails, no certificate is
+  // produced. Downloading the POD certificate is the single most sensitive read in the
+  // product — it carries the recipient's name, both addresses, the geotag and the photo.
+  await recordAccess(db, {
+    accessor: { kind: "public_link", tenantId: order.tenantId },
+    action: "proof.pdf",
+    orderId: order.id,
+    ipAddress: request.headers.get("x-forwarded-for"),
+    userAgent: request.headers.get("user-agent"),
+  });
 
   const [signature, photo] = await Promise.all([
     fetchBytes(proof.signatureKey),

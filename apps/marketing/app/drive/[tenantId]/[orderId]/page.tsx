@@ -26,7 +26,8 @@ import {
   findProof,
   pickupAddressOf,
 } from "../../../../lib/orders";
-import { isStorageConfigured, presignProofDownload } from "../../../../lib/storage";
+import { isStorageConfigured } from "../../../../lib/storage";
+import { openEvidence } from "../../../../lib/access-log";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Job — PorterDirect" };
@@ -71,8 +72,20 @@ export default async function DriveJob({
   const captureReplacesDelivered = mayCaptureProof && isStorageConfigured();
   const moves = captureReplacesDelivered ? forward.filter((m) => m !== "delivered") : forward;
 
-  const photoUrl = proof?.photoKey ? await presignProofDownload(proof.photoKey) : null;
-  const signatureUrl = proof?.signatureKey ? await presignProofDownload(proof.signatureKey) : null;
+  // A driver reading back their own proof is still an access to PHI, and is logged the
+  // same way an office user's is. Nothing here is exempt because the reader is trusted.
+  const viewer = { kind: "member", tenantId, userId } as const;
+  const photoUrl = proof?.photoKey
+    ? await openEvidence(db, { key: proof.photoKey, accessor: viewer, action: "proof.photo", orderId })
+    : null;
+  const signatureUrl = proof?.signatureKey
+    ? await openEvidence(db, {
+        key: proof.signatureKey,
+        accessor: viewer,
+        action: "proof.signature",
+        orderId,
+      })
+    : null;
 
   // Before pickup the driver is going to the COLLECTION point; after it, to the customer.
   const heading = status === "pending" || status === "assigned" ? pickup : dropoff;
