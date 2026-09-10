@@ -695,6 +695,67 @@ export const orders = pgTable(
  * is deliberately no update path, because an editable audit log is not an audit log.
  */
 /**
+ * The durable index of what is in the object store.
+ *
+ * THIS TABLE EXISTS BECAUSE OF A SPECIFIC DEFECT. `order_proofs` cascade-deletes from both
+ * `orders` and `tenants`, and it is the only thing holding the object KEYS — so deleting
+ * one order removed the row and left the delivery photo and signature in the bucket
+ * forever, with nothing left that could name them. That is PHI we could neither account
+ * for nor destroy on request, which under a BAA is a reportable condition rather than an
+ * untidy corner.
+ *
+ * So this row is deliberately DECOUPLED from the order it came from:
+ *
+ *   `tenant_id` and `order_id` are plain uuids with NO foreign key. That is not an
+ *   oversight. A foreign key would reintroduce exactly the cascade being fixed, and these
+ *   are historical facts — "this object belonged to that order" stays true after the order
+ *   row is gone, in the same way `order_events` records who moved a job whether or not
+ *   that user still exists.
+ *
+ * It also inverts the previous behaviour on purpose. Deleting an order must NOT destroy
+ * the evidence: HIPAA requires the custody record be RETAINED for six years, so the
+ * object outlives the order and is destroyed only by the retention sweep.
+ */
+export const storageObjects = pgTable(
+  "storage_objects",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Plain value, no FK — see above. Kept so a tenant's objects stay enumerable. */
+    tenantId: uuid("tenant_id").notNull(),
+    orderId: uuid("order_id"),
+    /** The bucket key. Unique: one row per object, or the sweep could miss one. */
+    key: text("key").notNull(),
+    kind: text("kind").notNull(),
+    contentType: text("content_type").notNull(),
+    byteSize: integer("byte_size"),
+    /**
+     * When this object may be destroyed.
+     *
+     * Stored per object rather than computed at sweep time from a global constant, and
+     * that is the important choice: evidence written under a six-year promise has to keep
+     * THAT promise even if the policy later changes. A computed rule would silently
+     * re-date every historical object the day someone edits a constant — including
+     * shortening it, which would destroy evidence early and leave no trace that the
+     * commitment had ever been different.
+     */
+    retainUntil: timestamp("retain_until", { withTimezone: true }).notNull(),
+    /** Null while the object is still in the bucket. Set by the sweep, never unset. */
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    keyIdx: uniqueIndex("storage_objects_key_idx").on(t.key),
+    tenantIdx: index("storage_objects_tenant_idx").on(t.tenantId),
+    orderIdx: index("storage_objects_order_idx").on(t.orderId),
+    /** The sweep's query: what is due for destruction and still present. */
+    sweepIdx: index("storage_objects_sweep_idx").on(t.retainUntil, t.deletedAt),
+  }),
+);
+
+export type StorageObject = typeof storageObjects.$inferSelect;
+export type NewStorageObject = typeof storageObjects.$inferInsert;
+
+/**
  * Proof of delivery — the evidence the premium tier is sold on.
  *
  * A separate table rather than more nullable columns on `orders`, because POD is a

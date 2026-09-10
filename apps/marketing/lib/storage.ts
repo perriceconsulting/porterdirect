@@ -18,7 +18,13 @@
  * to that is the leak, so nothing here ever returns one.
  */
 import { randomUUID } from "node:crypto";
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import type { ObjectDestroyer } from "./retention";
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 /** Only what a camera or a signature pad produces. An allowlist, never a denylist. */
@@ -167,3 +173,23 @@ export async function presignProofDownload(key: string, expiresIn = 900): Promis
   const command = new GetObjectCommand({ Bucket: config.bucket, Key: key });
   return getSignedUrl(client(config), command, { expiresIn });
 }
+
+/**
+ * Remove one object from the bucket.
+ *
+ * The ONLY delete path in the product, and it is deliberately not exported as a
+ * convenience: it is reached through `sweepExpiredObjects`, which will not call it until
+ * an object is past its retention date and which records the destruction afterwards.
+ * A delete that nothing witnessed is as much of a problem as an object nobody can find.
+ *
+ * S3 DeleteObject is idempotent — removing a key that is already gone succeeds — which is
+ * what makes the sweep safe to retry after a partial failure.
+ */
+export const bucketDestroyer: ObjectDestroyer = {
+  async destroy(key: string): Promise<void> {
+    const config = readConfig();
+    await client(config).send(
+      new DeleteObjectCommand({ Bucket: config.bucket, Key: key }),
+    );
+  },
+};

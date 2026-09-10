@@ -26,6 +26,7 @@ import {
   isAllowedContentType,
   presignProofUpload,
 } from "../../../../lib/storage";
+import { recordStorageObject } from "../../../../lib/retention";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -92,6 +93,26 @@ export async function POST(request: Request): Promise<NextResponse> {
       contentType,
       contentLength,
     });
+
+    // Recorded BEFORE the URL is handed out, and this ordering is the whole point.
+    //
+    // The moment this response leaves, an object we cannot see can appear in the bucket:
+    // the device PUTs directly, and nothing reports back. If the ledger row were written
+    // afterwards — at proof-capture, say — then every upload whose order failed to save,
+    // whose driver closed the app, or whose request we never heard about again would be
+    // PHI in our bucket that nothing could name. That is the exact condition this table
+    // exists to end, so the row goes first and may legitimately describe an object that
+    // never arrives. A ledger entry with no object is harmless; an object with no ledger
+    // entry is the reportable one.
+    await recordStorageObject(db, {
+      tenantId,
+      orderId,
+      key,
+      kind,
+      contentType,
+      byteSize: contentLength,
+    });
+
     return NextResponse.json({ url, key }, { status: 200 });
   } catch (err) {
     if (err instanceof StorageNotConfiguredError) {

@@ -29,6 +29,7 @@ agencies) who run the physical work under their own brand + domain.
 | DB migrations | [packages/db/drizzle/](packages/db/drizzle/) | GENERATED from `schema.ts` via `npm run db:generate` — never hand-write DDL |
 | Env file reading | [scripts/lib/load-env.sh](scripts/lib/load-env.sh) | The only place a secrets file is read; parses as data, never sourced |
 | Authorization policy | [packages/auth/src/permissions.ts](packages/auth/src/permissions.ts) | The role→permission matrix; pure, exhaustive, no inheritance chain |
+| Evidence retention | [apps/marketing/lib/retention.ts](apps/marketing/lib/retention.ts) | Six years, stored PER OBJECT at write time. `storage_objects` is the durable index of bucket contents and deliberately carries NO foreign keys |
 | Proof-of-delivery storage | [apps/marketing/lib/storage.ts](apps/marketing/lib/storage.ts) | Neon S3-compatible, private bucket. Presigned both ways; keys persisted, URLs never |
 | Customer tracking link | [apps/marketing/app/t/[token]/page.tsx](apps/marketing/app/t/[token]/page.tsx) | The only surface with no login. Operator-branded; token is the whole authorization |
 | What a job COSTS | [packages/pricing/src/rate-card.ts](packages/pricing/src/rate-card.ts) | Pure. Distance is an ARGUMENT, so the money arithmetic is testable with no maps key. Refuses rather than guesses |
@@ -285,6 +286,28 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
   fail on all three assertions with the call removed. Same lesson as the re-dispatch race,
   where restoring the pre-check kept passing because the unique index was still doing the
   work: a guard proven by reverting the wrong layer proves nothing.
+- **Deleting a row can strand PHI that nothing can then name.** `order_proofs`
+  cascade-deletes from `orders` AND `tenants`, and it was the only thing holding the
+  object KEYS — so removing one order left the delivery photo and signature in the bucket
+  permanently, unreachable and uncountable. Not "missing retention": PHI we could neither
+  account for nor destroy on request, which under a BAA is a reportable condition. The fix
+  is `storage_objects`, a ledger of bucket contents whose `tenant_id` and `order_id` are
+  **plain uuids with no foreign key** — deliberately, because an FK would reintroduce the
+  cascade being fixed. Verified by planting the cascading FK and watching the test fail.
+  The general rule: if a row is the only thing that can name an external object, it must
+  not be reachable by anyone else's cascade.
+- **A destruction you cannot evidence is not a destruction you can report.** The retention
+  sweep destroys the bucket object FIRST and only marks the row on success. Reversed, a
+  failed delete leaves a row claiming the object is gone while it sits in the bucket —
+  false assurance, which is worse than the original problem because it stops anyone
+  looking. Verified by reversing the order and watching the test fail. For the same
+  reason there is no S3 lifecycle rule: bucket-level expiry deletes without recording
+  that it did.
+- **Retention is stored per object, not computed from a constant.** Evidence written under
+  a six-year promise has to keep THAT promise. A rule computed at sweep time silently
+  re-dates every historical object the day someone edits the constant — including
+  shortening it, which destroys evidence early and leaves no trace the commitment was
+  ever different.
 - **Off-shift / post-delivery tracking** (driver app, later): location visibility is wired to
   shift/order status; continuing to track after off-shift is a legal liability, not a bug.
 - **Optimistic/offline updates that never reconcile** (driver app, later): every optimistic or
