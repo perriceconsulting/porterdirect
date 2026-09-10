@@ -65,6 +65,16 @@ export interface CreateOrderInput {
   /** What the driver is paid. The number on the offer they accept or refuse. */
   readonly driverPayCents?: number;
   /**
+   * The customer account that booked this, when a customer booked it themselves.
+   *
+   * Provenance, not ownership: the person who BOOKS and the person who RECEIVES are
+   * routinely different — a law firm books a delivery to a court — so the recipient stays
+   * in `customerFirstName` and the rest.
+   */
+  readonly bookedByCustomerId?: string;
+  /** The road distance an automatic quote was based on, when there was one. */
+  readonly quotedDistanceMeters?: number;
+  /**
    * Required for `scheduled_courier`. An exact time window IS the product for that type,
    * so an unscheduled "scheduled" job is a contradiction the board cannot act on.
    */
@@ -203,6 +213,8 @@ export async function createOrder(db: Db, input: CreateOrderInput): Promise<Orde
           // Every job gets one at creation. Minting it later would mean a customer who
           // asks "where is it?" before anyone thinks to generate a link cannot be told.
           publicToken: newPublicToken(),
+          bookedByCustomerId: input.bookedByCustomerId ?? null,
+          quotedDistanceMeters: input.quotedDistanceMeters ?? null,
           pickupLine1: input.pickup.line1.trim(),
           pickupLine2: input.pickup.line2?.trim() || null,
           pickupCity: input.pickup.city.trim(),

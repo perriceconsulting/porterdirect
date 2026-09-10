@@ -23,6 +23,12 @@ import { inviteMemberAction, revokeInvitationAction } from "./team-actions";
 import { ORDER_TYPES, TYPE_LABELS } from "@porterdirect/orders";
 import { loadRateCard, metresToMiles } from "../../../lib/rate-cards";
 import { saveRateCardAction, setCustomerSignupAction } from "./pricing-actions";
+import {
+  inviteCustomerAction,
+  revokeCustomerInvitationAction,
+  setCustomerStatusAction,
+} from "./customer-actions";
+import { listCustomers, listPendingCustomerInvitations } from "../../../lib/customers";
 
 /**
  * Cents back to the dollars an operator typed, for a form default.
@@ -61,6 +67,8 @@ export default async function Console({
   searchParams: Promise<{
     error?: string;
     invited?: string;
+    customerError?: string;
+    customerInvited?: string;
     priceError?: string;
     priced?: string;
     signup?: string;
@@ -84,6 +92,8 @@ export default async function Console({
   // so a driver confined to their own work cannot download the whole company's history.
   const seesEverything = can(membership.role, "orders:read:all");
   const rateCard = maySetPricing ? await loadRateCard(db, tenantId) : null;
+  const customers = maySetPricing ? await listCustomers(db, tenantId) : [];
+  const pendingCustomers = maySetPricing ? await listPendingCustomerInvitations(db, tenantId) : [];
   const plan = subscription ? getPlan(subscription.planId) : null;
   const monthly =
     subscription && plan ? computeMonthlyTotalCents(plan.id, subscription.seatCount) : null;
@@ -133,6 +143,16 @@ export default async function Console({
           {notice.invited ? (
             <p className="notice" role="status">
               Invitation sent to {notice.invited}.
+            </p>
+          ) : null}
+          {notice.customerInvited ? (
+            <p className="notice" role="status">
+              Customer invitation sent to {notice.customerInvited}.
+            </p>
+          ) : null}
+          {notice.customerError ? (
+            <p className="error" role="alert">
+              {notice.customerError}
             </p>
           ) : null}
 
@@ -447,6 +467,77 @@ export default async function Console({
                 <div className="form-actions">
                   <button className="btn" type="submit">
                     Save
+                  </button>
+                </div>
+              </form>
+
+              {customers.length > 0 ? (
+                <ul className="team-list">
+                  {customers.map((c) => (
+                    <li key={c.id}>
+                      <div>
+                        <strong>{c.companyName ?? `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim()}</strong>
+                        <p className="hint">{c.email}</p>
+                      </div>
+                      <span className={c.status === "active" ? "pill" : "pill warn"}>{c.status}</span>
+                      {/* Blocked rather than deleted: the row carries the provenance of
+                          every job they booked. */}
+                      <form action={setCustomerStatusAction}>
+                        <input type="hidden" name="tenantId" value={tenantId} />
+                        <input type="hidden" name="customerId" value={c.id} />
+                        <input
+                          type="hidden"
+                          name="status"
+                          value={c.status === "active" ? "blocked" : "active"}
+                        />
+                        <button className="btn btn-quiet" type="submit">
+                          {c.status === "active" ? "Block" : "Unblock"}
+                        </button>
+                      </form>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+
+              {pendingCustomers.length > 0 ? (
+                <ul className="team-list">
+                  {pendingCustomers.map((i) => (
+                    <li key={i.id}>
+                      <div>
+                        <strong>{i.email}</strong>
+                        <p className="hint">
+                          invited · expires {i.expiresAt.toISOString().slice(0, 10)}
+                        </p>
+                      </div>
+                      <form action={revokeCustomerInvitationAction}>
+                        <input type="hidden" name="tenantId" value={tenantId} />
+                        <input type="hidden" name="invitationId" value={i.id} />
+                        <button className="btn btn-quiet" type="submit">
+                          Withdraw
+                        </button>
+                      </form>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+
+              {/* The half that was missing: the panel had a setting and no way to invite
+                  anybody, which is a control for a feature with no door. */}
+              <form action={inviteCustomerAction} className="entry-form">
+                <input type="hidden" name="tenantId" value={tenantId} />
+                <div className="row-2">
+                  <div className="field">
+                    <label htmlFor="customerEmail">Invite by email</label>
+                    <input id="customerEmail" name="email" type="email" required />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="customerCompany">Their company (optional)</label>
+                    <input id="customerCompany" name="companyName" />
+                  </div>
+                </div>
+                <div className="form-actions">
+                  <button className="btn btn-primary" type="submit">
+                    Send invitation
                   </button>
                 </div>
               </form>

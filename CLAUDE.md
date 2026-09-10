@@ -31,6 +31,7 @@ agencies) who run the physical work under their own brand + domain.
 | Authorization policy | [packages/auth/src/permissions.ts](packages/auth/src/permissions.ts) | The role→permission matrix; pure, exhaustive, no inheritance chain |
 | Chain of custody | [packages/db/drizzle/0022_order_events_append_only.sql](packages/db/drizzle/0022_order_events_append_only.sql) | Append-only enforced by a TRIGGER, not a comment. No foreign keys. DELETE is dated, not forbidden — the retention rule lives in Postgres |
 | Evidence export | [apps/marketing/lib/export-pack.ts](apps/marketing/lib/export-pack.ts) | Three CSVs a courier hands their client. Every value goes through `csv.ts`, which neutralises spreadsheet formulas |
+| Customer portal access | [apps/marketing/lib/portal.ts](apps/marketing/lib/portal.ts) | Resolves through `tenant_customers`, NOT the role matrix. Deliberately separate from `console.ts` |
 | Access auditing | [apps/marketing/lib/access-log.ts](apps/marketing/lib/access-log.ts) | `openEvidence` is the ONLY audited path to a stored object; the primitive is named `presignProofDownloadUnaudited` and `verify:conventions` fails on any caller outside a tiny allowlist |
 | Evidence retention | [apps/marketing/lib/retention.ts](apps/marketing/lib/retention.ts) | Six years, stored PER OBJECT at write time. `storage_objects` is the durable index of bucket contents and deliberately carries NO foreign keys |
 | Proof-of-delivery storage | [apps/marketing/lib/storage.ts](apps/marketing/lib/storage.ts) | Neon S3-compatible, private bucket. Presigned both ways; keys persisted, URLs never |
@@ -440,6 +441,36 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
   the file was rewritten, and inert. Sibling of the `KEY= value` landmine already recorded:
   a secrets file is parsed strictly, and the ways it can be malformed are silent. Append by
   reading, normalising the trailing newline, writing, and READING BACK the specific key.
+- **A setting for a feature with no door.** The console shipped a "Customer accounts"
+  panel with a signup-mode toggle and no way to invite a customer, no portal for one to
+  sign into, and nothing that called the quoting engine — a control for a capability that
+  did not exist. Noticed by the person who owns the product asking "what happens when a
+  customer creates an order? I am not seeing that process", and the answer was that there
+  was no process. Same failure as `/drive` being unreachable: if nobody can get to it, it
+  is not built.
+- **The customer portal resolves through `tenant_customers`, never the role matrix, and
+  the resolver is deliberately NOT shared with the console.** One function that sometimes
+  returns staff and sometimes a customer would leave every caller to remember which — and
+  the day one forgets, an operator's board is served to somebody who books deliveries from
+  them. A customer holds no `Permission` at all.
+- **A customer booking arrives UNPRICED, and that is the product rather than a stub.**
+  `quoteJob` returns `needs_review` with no distance provider wired, the job lands on the
+  board showing "Needs pricing", and `claimOrder` already refuses to offer an unpriced job
+  to a driver — so it cannot reach the offer board until a person has priced it. The whole
+  loop works today without a maps key.
+- **The booking form has NO price field, and the action reads none.** What a job costs is
+  the operator's decision; a booking carrying its own amount would let anyone name what
+  they pay.
+- **Each Playwright test gets a FRESH browser context.** `mode: "serial"` orders tests, it
+  does not share cookies. A test that signed in during test 1 and navigated in test 2 hit
+  the sign-in page — which reads exactly like a routing bug and is not one. Assert you are
+  ON the page before asserting about its markup.
+- **The shared sign-in page is not white-labelled, and customers are sent to it.** It
+  serves `<title>Sign in — PorterDirect</title>` and the marketing OpenGraph block, so the
+  first thing an operator's client sees on the way to their portal is OUR name. The portal
+  and tracking pages override all of it; the auth pages do not, because they are not
+  tenant-scoped. Genuinely unresolved — it needs host-based tenant resolution, i.e. the
+  white-label DNS work.
 - **Off-shift / post-delivery tracking** (driver app, later): location visibility is wired to
   shift/order status; continuing to track after off-shift is a legal liability, not a bug.
 - **Optimistic/offline updates that never reconcile** (driver app, later): every optimistic or
