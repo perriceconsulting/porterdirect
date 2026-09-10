@@ -1,13 +1,23 @@
 /**
  * Outbound email.
  *
- * There is no mail provider configured yet, and the dangerous way to handle that is a
- * sender that quietly returns success — a password reset that reports "check your inbox"
- * while sending nothing is worse than an outage, because nobody investigates it.
+ * VERIFIED 2026-09-10: a real message sent through this function was accepted by Resend
+ * and reported `delivered`, from `porterdirect.com` (a verified sending domain on the
+ * account). Recorded with a date because the previous version of this comment said "there
+ * is no mail provider configured yet" long after one was — and a comment that lies about
+ * the code beside it is worse than no comment.
  *
- * So: send through Resend when a key exists; in development, print the link to the
- * server console so the flow is exercisable; and in production with no provider,
- * THROW. A reset flow that cannot deliver must fail loudly.
+ * The dangerous failure here is a sender that quietly returns success: a password reset
+ * reporting "check your inbox" while sending nothing is worse than an outage, because
+ * nobody investigates it. So: send through Resend when a key exists; in development,
+ * print the link to the server console so the flow stays exercisable; and in production
+ * with no provider, THROW.
+ *
+ * NOT DONE, and worth knowing: the provider's message id is discarded. Resend reports a
+ * per-message status — the account already shows a `delivery_delayed` — and that id is
+ * the only handle for answering "did the customer's receipt actually arrive?". For a
+ * product sold on evidence that is a gap, but it needs somewhere to store the id, so it
+ * belongs with the audit-log work rather than here.
  */
 export interface Email {
   readonly to: string;

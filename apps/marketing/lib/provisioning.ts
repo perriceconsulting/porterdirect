@@ -53,40 +53,72 @@ function stripe(): Stripe {
   return createStripeClient(process.env.STRIPE_SECRET_KEY);
 }
 
-export async function provisionTenant(input: ProvisionInput): Promise<ProvisionResult> {
+/**
+ * Everything that can refuse a signup BEFORE an account exists.
+ *
+ * Split out because of a real defect: `signUpAction` created the Better Auth user and
+ * only then called `provisionTenant`, so every one of these refusals left an **orphaned
+ * account** — a user row with no tenant. The person could sign in and land nowhere, and,
+ * worse, retrying with the same address hit "that email is already registered", so they
+ * could never complete signup with their own email. Found by attempting a reserved host
+ * against production and then finding the row.
+ *
+ * Not one of these checks needs `ownerUserId`, which is what makes the fix possible: they
+ * all depend on input the form already carries. The signup action runs this first, and
+ * `provisionTenant` runs it again — a form post arrives on its own and the second caller
+ * is not the first one's promise, the same reason every action re-authorizes.
+ */
+export async function validateProvisionInput(
+  input: Pick<ProvisionInput, "name" | "host" | "planId" | "country">,
+): Promise<{ readonly failure: ProvisionFailure } | { readonly host: string; readonly planId: PlanId }> {
   const name = input.name.trim();
   if (name.length < 2 || name.length > 120) {
-    return { ok: false, failure: { kind: "invalid-name" } };
+    return { failure: { kind: "invalid-name" } };
   }
 
   // Validated against the same rule that classifies incoming requests, so a tenant can
   // never register a host we would treat as one of our own surfaces.
   const assignment = assignableTenantHost(input.host);
   if (!assignment.ok) {
-    return { ok: false, failure: { kind: "invalid-host", reason: assignment.reason } };
+    return { failure: { kind: "invalid-host", reason: assignment.reason } };
   }
 
   if (!isSupportedCountry(input.country)) {
-    return { ok: false, failure: { kind: "invalid-country" } };
+    return { failure: { kind: "invalid-country" } };
   }
 
   let planId: PlanId;
   try {
     planId = getPlan(input.planId).id;
   } catch {
-    return { ok: false, failure: { kind: "unknown-plan" } };
+    return { failure: { kind: "unknown-plan" } };
   }
 
   const db: Db = createDbClient(process.env.DATABASE_URL);
-
   const [existing] = await db
     .select({ id: tenants.id })
     .from(tenants)
     .where(eq(tenants.primaryHost, assignment.host))
     .limit(1);
   if (existing) {
-    return { ok: false, failure: { kind: "host-taken" } };
+    return { failure: { kind: "host-taken" } };
   }
+
+  return { host: assignment.host, planId };
+}
+
+export async function provisionTenant(input: ProvisionInput): Promise<ProvisionResult> {
+  const name = input.name.trim();
+
+  // Re-checked here, not inherited from the caller. `host-taken` in particular is a race
+  // the pre-flight cannot close on its own — two signups for one host can both pass it —
+  // so this stays, and the unique index behind it is what actually decides.
+  const checked = await validateProvisionInput(input);
+  if ("failure" in checked) return { ok: false, failure: checked.failure };
+  const assignment = { host: checked.host };
+  const planId = checked.planId;
+
+  const db: Db = createDbClient(process.env.DATABASE_URL);
 
   // 1. Tenant.
   const [tenant] = await db

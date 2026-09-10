@@ -268,6 +268,23 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
   flake. The real fix is a warm-up pass that compiles each route before the parallel
   tests hit it, or fewer workers. Until then, read a single moving failure as the
   harness and re-run; a failure that REPEATS in the same spec is a real one.
+- **A failed signup used to leave an ORPHANED ACCOUNT, and the second consequence was
+  the bad one.** `signUpAction` created the Better Auth user and only then called
+  `provisionTenant`, so a rejected or already-taken host left a user row with no tenant.
+  That person could sign in and land nowhere — and, worse, retrying with the same address
+  hit "that email is already registered", so they could never complete signup with their
+  own email. Not one of the five provisioning refusals needs a user id, so they all now
+  run BEFORE the account is created. Found on PRODUCTION, by submitting a reserved host
+  and then looking for the row; nothing in the suite could see it, because no test
+  asserted on what did NOT get created.
+- **A unit test of the extracted function does not prove the caller calls it.** The fix
+  above has its own tests and every one stays green when the CALL is deleted from the
+  action — the function was never the guarantee, the ORDER of two steps inside the action
+  is. Only a real form post followed by a database read can assert it
+  ([e2e/signup-orphan.spec.ts](e2e/signup-orphan.spec.ts)), and that spec was verified to
+  fail on all three assertions with the call removed. Same lesson as the re-dispatch race,
+  where restoring the pre-check kept passing because the unique index was still doing the
+  work: a guard proven by reverting the wrong layer proves nothing.
 - **Off-shift / post-delivery tracking** (driver app, later): location visibility is wired to
   shift/order status; continuing to track after off-shift is a legal liability, not a bug.
 - **Optimistic/offline updates that never reconcile** (driver app, later): every optimistic or

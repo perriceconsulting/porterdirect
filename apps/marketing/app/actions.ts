@@ -16,7 +16,11 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { classifyAuthError, isRedirectError, type AuthFailure } from "@porterdirect/auth";
 import { getAuth } from "../lib/auth";
-import { createCheckoutSession, provisionTenant } from "../lib/provisioning";
+import {
+  createCheckoutSession,
+  provisionTenant,
+  validateProvisionInput,
+} from "../lib/provisioning";
 import { validatePassword } from "../lib/password";
 
 export type FormErrorCode =
@@ -199,6 +203,16 @@ export async function signUpAction(data: FormData): Promise<void> {
   const passwordProblem = await validatePassword(password, { email });
   if (passwordProblem) {
     back("/signup", "password-policy", { ...keep, detail: passwordProblem });
+  }
+
+  // Same reasoning, extended to everything else that can refuse this signup. It used to
+  // run only AFTER the account was created, so a bad or taken host left an orphaned user
+  // — one who could sign in to nothing, and who could then never retry with their own
+  // address because it was already registered. None of these checks needs a user id.
+  const preflight = await validateProvisionInput({ name: company, host, planId, country });
+  if ("failure" in preflight) {
+    const { failure } = preflight;
+    back("/signup", failure.kind === "invalid-host" ? "invalid-host" : failure.kind, keep);
   }
 
   let userId: string;
