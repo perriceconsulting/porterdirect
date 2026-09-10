@@ -413,6 +413,21 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
   attempts to write `﻿` as an escape produced the actual character instead — which
   ESLint then rejected as irregular whitespace. `String.fromCharCode(0xfeff)` keeps the
   source pure ASCII and legible. Worth knowing before spending the same twenty minutes.
+- **A sweep with no caller is a claim, not a control.** `sweepExpiredObjects` and
+  `purgeExpiredAccessEvents` were written, tested and then invoked by nothing, so
+  "we destroy PHI on schedule" described a function rather than a behaviour — and under a
+  BAA the commitment is the behaviour. Now a Vercel cron at `/api/cron/retention`, with the
+  schedule asserted by a TEST that reads `vercel.json`, because a route with no schedule is
+  the same defect one level up and just as invisible. Verified by emptying `crons` and
+  watching it fail.
+- **An unauthenticated endpoint that deletes things fails CLOSED.** With no `CRON_SECRET`
+  set the retention route refuses rather than running openly, and answers 404 rather than
+  401 so it does not confirm its own existence. "It only deletes rows past their retention
+  date" is why that is survivable, not a reason to leave it open. Verified by making it
+  fail open and watching the test fail.
+- **`next build` hangs while the dev server holds `.next`.** Not an error — it simply never
+  finishes, which reads as a slow build. Kill the dev server first. Same root cause as the
+  EPERM on `.next/trace` when Playwright tries to start a second server on an occupied port.
 - **Off-shift / post-delivery tracking** (driver app, later): location visibility is wired to
   shift/order status; continuing to track after off-shift is a legal liability, not a bug.
 - **Optimistic/offline updates that never reconcile** (driver app, later): every optimistic or
