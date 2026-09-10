@@ -129,5 +129,33 @@ else
   note "ok"
 fi
 
+# 6) every workspace package an app imports is declared as its dependency
+#
+# npm workspaces hoist, so an undeclared `@porterdirect/*` import resolves perfectly on a
+# machine where some OTHER package already pulled it in — typecheck passes, tests pass,
+# lint passes — and then a clean install on a build server has no reason to create the
+# symlink. That is exactly how `@porterdirect/pricing` reached production as
+# "Module not found" after a fully green local run.
+note "6) apps declare every workspace package they import"
+undeclared=""
+for appdir in apps/*/; do
+  [ -f "$appdir/package.json" ] || continue
+  imported=$(git grep -ho '@porterdirect/[a-z-]*' -- "$appdir" 2>/dev/null | sort -u)
+  for pkg in $imported; do
+    if ! grep -q "\"$pkg\"" "$appdir/package.json"; then
+      undeclared="$undeclared
+     $appdir needs $pkg"
+    fi
+  done
+done
+if [ -n "$undeclared" ]; then
+  note "FAIL — workspace imports missing from package.json:"
+  printf "%b
+" "$undeclared"
+  fail=1
+else
+  note "ok"
+fi
+
 if [ "$fail" -ne 0 ]; then echo "verify:conventions FAILED"; exit 1; fi
 echo "verify:conventions passed"

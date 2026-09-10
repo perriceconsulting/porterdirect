@@ -359,6 +359,20 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
   and demo teardowns deleted `order_events`; all seven now leave the trail behind, which is
   what production does. Rows from test runs accumulate, and that is the guarantee working:
   a trail a cleanup script can erase is not a trail.
+- **An undeclared workspace import resolves locally and fails on a clean install.**
+  `@porterdirect/pricing` was imported by `apps/marketing` and never added to its
+  `package.json`. npm workspaces hoist, so the symlink already existed on this machine:
+  typecheck, lint and 523 tests all passed, and the Vercel build then failed with
+  "Module not found" — production kept serving a twelve-hour-old bundle while everything
+  local said green. Same shape as `tsc -b packages/*` not covering the app: the deploy was
+  the first thing that ever checked it. `verify:conventions` now asserts every
+  `@porterdirect/*` an app imports is declared by that app, verified by removing the
+  declaration and watching it fail.
+- **A green push is not a green deploy.** Pushing reported success, the site returned 200
+  on every route, and none of it was the new code — the last GOOD build was still being
+  served. The only check that caught it was a behavioural one: hitting the production
+  tracking page and finding no audit row where the new build would have written one. After
+  a deploy, assert on something the new code DOES, not on a status code.
 - **Off-shift / post-delivery tracking** (driver app, later): location visibility is wired to
   shift/order status; continuing to track after off-shift is a legal liability, not a bug.
 - **Optimistic/offline updates that never reconcile** (driver app, later): every optimistic or
