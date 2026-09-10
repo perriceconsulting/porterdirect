@@ -127,6 +127,13 @@
       "when": 1788992115165,
       "tag": "0017_tricky_proemial_gods",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1789014612916,
+      "tag": "0018_normal_thunderbolts",
+      "breakpoints": true
     }
   ]
 }

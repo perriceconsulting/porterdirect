@@ -14,6 +14,8 @@ import {
 import { ORDER_TYPES, type OrderType } from "@porterdirect/orders";
 import {
   assertValidRateCard,
+  assertValidFuelSettings,
+  type FuelSettings,
   type RateCard,
   type TypeRate,
 } from "@porterdirect/pricing";
@@ -74,6 +76,35 @@ export async function loadRateCard(db: Db, tenantId: string): Promise<RateCard |
     rates: rates as Record<OrderType, TypeRate>,
     driverPayPercent: card.driverPayPercent,
     maxQuotableMeters: card.maxQuotableMeters,
+    fuel: readFuelSettings(card),
+  };
+}
+
+/**
+ * The fuel settings, or null when this operator runs no surcharge.
+ *
+ * ALL THREE columns must be present. A partially-filled set is treated as no surcharge
+ * rather than being patched with defaults, because every default available here is
+ * wrong in a way that shows up as money: a baseline of zero surcharges the entire pump
+ * price on top of a per-mile rate that already covers fuel, and a guessed mpg misprices
+ * every mile. Null is the only safe reading of an incomplete set.
+ */
+function readFuelSettings(card: {
+  fuelBasis: "gasoline" | "diesel" | null;
+  fuelBaselineCentsPerGallon: number | null;
+  milesPerGallonTenths: number | null;
+}): FuelSettings | null {
+  if (
+    card.fuelBasis === null ||
+    card.fuelBaselineCentsPerGallon === null ||
+    card.milesPerGallonTenths === null
+  ) {
+    return null;
+  }
+  return {
+    basis: card.fuelBasis,
+    baselineCentsPerGallon: card.fuelBaselineCentsPerGallon,
+    milesPerGallonTenths: card.milesPerGallonTenths,
   };
 }
 
@@ -102,6 +133,9 @@ export async function hasRateCard(db: Db, tenantId: string): Promise<boolean> {
  */
 export async function saveRateCard(db: Db, tenantId: string, card: RateCard): Promise<void> {
   assertValidRateCard(card);
+  // Validated with the SAME function the quoting path uses, so a surcharge that could
+  // not be computed from cannot be stored in the first place.
+  if (card.fuel) assertValidFuelSettings(card.fuel);
 
   const [existing] = await db
     .select({ id: tenantRateCards.id })
@@ -117,6 +151,9 @@ export async function saveRateCard(db: Db, tenantId: string, card: RateCard): Pr
       .set({
         driverPayPercent: card.driverPayPercent,
         maxQuotableMeters: card.maxQuotableMeters,
+        fuelBasis: card.fuel?.basis ?? null,
+        fuelBaselineCentsPerGallon: card.fuel?.baselineCentsPerGallon ?? null,
+        milesPerGallonTenths: card.fuel?.milesPerGallonTenths ?? null,
         updatedAt: new Date(),
       })
       .where(and(eq(tenantRateCards.id, cardId), eq(tenantRateCards.tenantId, tenantId)));
@@ -127,6 +164,9 @@ export async function saveRateCard(db: Db, tenantId: string, card: RateCard): Pr
         tenantId,
         driverPayPercent: card.driverPayPercent,
         maxQuotableMeters: card.maxQuotableMeters,
+        fuelBasis: card.fuel?.basis ?? null,
+        fuelBaselineCentsPerGallon: card.fuel?.baselineCentsPerGallon ?? null,
+        milesPerGallonTenths: card.fuel?.milesPerGallonTenths ?? null,
       })
       .returning({ id: tenantRateCards.id });
     if (!created) throw new RateCardValidationError("Could not save the rate card.");

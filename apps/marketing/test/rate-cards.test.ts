@@ -55,6 +55,9 @@ const card: RateCard = {
   },
   driverPayPercent: 65,
   maxQuotableMeters: 80_467,
+  // No surcharge on this fixture. Stated rather than omitted: the compiler requires it,
+  // which is the point — "runs no fuel surcharge" is a decision, not a missing field.
+  fuel: null,
 };
 
 suite("rate card persistence", () => {

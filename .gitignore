@@ -66,3 +66,10 @@ secrets/
 # invites someone to "helpfully" delete it, or to miss that it is the canonical contract.
 .env*
 !.env.example
+
+# Local HTTPS certificates for real-device testing on a LAN address.
+# A PRIVATE KEY lives here. Untracked is not enough — an unignored file goes in with the
+# next `git add -A`, which is precisely how a .env.local.bak reaches a remote.
+certificates/
+**/certificates/
+*.pem

@@ -8,6 +8,12 @@
  * (the HIBP breach check inside a test path).
  */
 import type { OrderType } from "@porterdirect/orders";
+import {
+  fuelSurchargeCents,
+  isFuelPriceUsable,
+  type FuelPrice,
+  type FuelSettings,
+} from "./fuel.js";
 
 /**
  * What one order type costs. Written per type rather than one rate for everything,
@@ -49,12 +55,29 @@ export type RateCard = {
    * refusing the work — it becomes a job the operator prices by hand.
    */
   readonly maxQuotableMeters: number | null;
+  /**
+   * What the base rate assumes about fuel, and what the fleet does with it.
+   *
+   * Null means this operator does not run a fuel surcharge — their per-mile rate is
+   * simply their per-mile rate. Absence is a real choice, not a missing value, and it
+   * must not be confused with a baseline of zero (which would surcharge the FULL pump
+   * price on every mile).
+   */
+  readonly fuel: FuelSettings | null;
 };
 
 export type QuoteBreakdown = {
   readonly baseCents: number;
   readonly distanceCents: number;
-  /** True when the floor lifted the price above base + distance. */
+  /**
+   * The fuel component, shown separately so a price that moves on its own can be
+   * explained to the person paying it. Zero when the operator runs no surcharge, or when
+   * fuel is at or below the baseline their base rate already assumes.
+   */
+  readonly fuelCents: number;
+  /** What the surcharge was indexed to, so the number can be checked rather than trusted. */
+  readonly fuelIndexedTo: { readonly region: string; readonly centsPerGallon: number; readonly asOf: Date } | null;
+  /** True when the floor lifted the price above base + distance + fuel. */
   readonly minimumApplied: boolean;
 };
 
@@ -62,7 +85,16 @@ export type QuoteBreakdown = {
 export type QuoteRefusal =
   | "no_rate_card"
   | "distance_unknown"
-  | "beyond_quotable_range";
+  | "beyond_quotable_range"
+  /**
+   * The operator runs a fuel surcharge and no current published price could be had.
+   *
+   * Deliberately a REFUSAL rather than quoting without the surcharge. Silently dropping
+   * it would undercharge by exactly the amount fuel has moved — largest precisely when
+   * the market is moving fastest, which is when it matters most and when nobody is
+   * checking. The job goes to a person instead.
+   */
+  | "fuel_price_unavailable";
 
 export type Quote =
   | {
@@ -147,6 +179,13 @@ export function quoteJob(args: {
   readonly card: RateCard | null;
   readonly type: OrderType;
   readonly distanceMeters: number | null;
+  /**
+   * The current published pump price. Required only when the card runs a surcharge —
+   * an operator with `fuel: null` quotes exactly as before, with no feed involved.
+   */
+  readonly fuelPrice?: FuelPrice | null;
+  /** Injected so staleness is testable without waiting a fortnight. */
+  readonly now?: Date;
 }): Quote {
   if (!args.card) return { kind: "needs_review", reason: "no_rate_card" };
   if (args.distanceMeters === null) return { kind: "needs_review", reason: "distance_unknown" };
@@ -161,10 +200,26 @@ export function quoteJob(args: {
     return { kind: "needs_review", reason: "beyond_quotable_range" };
   }
 
+  // Fuel, before the minimum is considered: the floor is a floor on the whole price,
+  // and applying it before the surcharge would let a short expensive-fuel run come out
+  // under the minimum the operator set.
+  let fuelCents = 0;
+  let fuelIndexedTo: QuoteBreakdown["fuelIndexedTo"] = null;
+  if (args.card.fuel) {
+    const price = args.fuelPrice ?? null;
+    // Usable means current AND for the right fuel. A diesel fleet priced off gasoline is
+    // wrong by a margin that varies week to week and looks entirely plausible.
+    if (!price || price.basis !== args.card.fuel.basis || !isFuelPriceUsable(price, args.now)) {
+      return { kind: "needs_review", reason: "fuel_price_unavailable" };
+    }
+    fuelCents = fuelSurchargeCents({ settings: args.card.fuel, price, distanceMeters: metres });
+    fuelIndexedTo = { region: price.region, centsPerGallon: price.centsPerGallon, asOf: price.asOf };
+  }
+
   const rate = args.card.rates[args.type];
   const baseCents = rate.baseCents;
   const distanceCents = distanceCharge(metres, rate.perMileCents);
-  const subtotal = baseCents + distanceCents;
+  const subtotal = baseCents + distanceCents + fuelCents;
   const minimumApplied = subtotal < rate.minimumCents;
   const priceCents = minimumApplied ? rate.minimumCents : subtotal;
 
@@ -177,6 +232,6 @@ export function quoteJob(args: {
     priceCents,
     driverPayCents,
     distanceMeters: metres,
-    breakdown: { baseCents, distanceCents, minimumApplied },
+    breakdown: { baseCents, distanceCents, fuelCents, fuelIndexedTo, minimumApplied },
   };
 }

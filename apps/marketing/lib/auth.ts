@@ -29,7 +29,7 @@ import {
 // Bump whenever createAuth's CONFIG changes, not just its shape: a cached instance
 // built from the old config keeps serving it, and a newly-enabled endpoint 404s
 // with no indication why. Adding sendResetPassword did exactly that.
-const AUTH_CONTRACT_VERSION = 3;
+const AUTH_CONTRACT_VERSION = 4;
 const g = globalThis as unknown as Record<string, unknown>;
 const authKey = `__pdAuth_v${AUTH_CONTRACT_VERSION}`;
 
@@ -41,6 +41,16 @@ export function getAuth(): Auth {
     db: createDbClient(process.env.DATABASE_URL),
     secret: process.env.BETTER_AUTH_SECRET ?? "",
     baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
+    // Origins other than baseURL that may post to the auth endpoints.
+    //
+    // Needed to open the dev server on a LAN address so a real phone can use it: the
+    // browser is on https://192.168.1.159:3000 while baseURL stays localhost, and
+    // without this the origin check refuses every sign-in. Comma-separated, empty by
+    // default, so a deployment that sets nothing trusts only its own origin.
+    trustedOrigins: (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
+      .split(",")
+      .map((o) => o.trim())
+      .filter(Boolean),
     // Lets a server action set the session cookie. Injected here rather than in the
     // auth package so that package stays framework-agnostic for the driver app.
     plugins: [nextCookies()],

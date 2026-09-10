@@ -365,6 +365,48 @@ export const orderStatus = pgEnum("order_status", asEnumValues(ORDER_STATUSES));
  *
  * The arithmetic lives in `@porterdirect/pricing`; these rows are only the inputs.
  */
+/**
+ * Which pump price a rate card is indexed to. A courier firm running vans and a freight
+ * dispatcher running trucks are different customers on the same platform, and the spread
+ * between the two fuels moves week to week — so this is per tenant, not a platform-wide
+ * assumption.
+ */
+export const fuelBasis = pgEnum("fuel_basis", ["gasoline", "diesel"]);
+
+/**
+ * Published pump prices, cached.
+ *
+ * A cache rather than a live call per quote: the source publishes WEEKLY, so fetching it
+ * on every booking would be thousands of identical requests for a number that changes on
+ * Mondays — and it would put a third-party outage directly in the path of every quote.
+ *
+ * `as_of` is the date the PRICE is for; `fetched_at` is when we retrieved it. They are
+ * different columns because they are different facts, and conflating them is how a
+ * three-month-old price passes a freshness check because it was fetched this morning.
+ */
+export const fuelPrices = pgTable(
+  "fuel_prices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    basis: fuelBasis("basis").notNull(),
+    /** The published series, e.g. a PADD region. Kept so a quote can say what it indexed. */
+    region: text("region").notNull(),
+    centsPerGallon: integer("cents_per_gallon").notNull(),
+    asOf: timestamp("as_of", { withTimezone: true }).notNull(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // One row per published observation. Re-fetching the same week must update in place
+    // rather than accumulate duplicates that then disagree about what the price was.
+    observationIdx: uniqueIndex("fuel_prices_observation_idx").on(t.basis, t.region, t.asOf),
+    // The query every quote runs: the most recent price for this basis and region.
+    latestIdx: index("fuel_prices_latest_idx").on(t.basis, t.region, t.asOf),
+  }),
+);
+
+export type FuelPriceRow = typeof fuelPrices.$inferSelect;
+export type NewFuelPriceRow = typeof fuelPrices.$inferInsert;
+
 export const tenantRateCards = pgTable(
   "tenant_rate_cards",
   {
@@ -380,6 +422,18 @@ export const tenantRateCards = pgTable(
      * customer types an address four states away and the portal sells a job nobody can run.
      */
     maxQuotableMeters: integer("max_quotable_meters"),
+    /**
+     * Fuel surcharge settings. All three are null together, meaning this operator runs no
+     * surcharge and their per-mile rate is simply their per-mile rate.
+     *
+     * A null baseline is NOT a baseline of zero. Zero would surcharge the entire pump
+     * price on every mile, on top of a per-mile rate that already covers fuel — roughly
+     * doubling the fuel component of every quote, plausibly, and silently.
+     */
+    fuelBasis: fuelBasis("fuel_basis"),
+    fuelBaselineCentsPerGallon: integer("fuel_baseline_cents_per_gallon"),
+    /** Integer tenths: 185 is 18.5 mpg. A fractional column would put a float in a price. */
+    milesPerGallonTenths: integer("miles_per_gallon_tenths"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

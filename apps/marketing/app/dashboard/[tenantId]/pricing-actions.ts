@@ -77,7 +77,40 @@ export async function saveRateCardAction(data: FormData): Promise<void> {
     const ceilingRaw = field(data, "maxQuotableMiles");
     const maxQuotableMeters = ceilingRaw ? milesToMetres(Number(ceilingRaw)) : null;
 
-    const card: RateCard = { rates, driverPayPercent, maxQuotableMeters };
+    // Fuel is opt-in and ALL-OR-NOTHING. A half-filled set is refused rather than
+    // patched with defaults: a baseline of zero would surcharge the whole pump price on
+    // top of a per-mile rate that already covers fuel, and a guessed mpg misprices every
+    // mile. Both are wrong in a way that only shows up on an invoice.
+    const basisRaw = field(data, "fuelBasis");
+    const baselineRaw = field(data, "fuelBaseline");
+    const mpgRaw = field(data, "milesPerGallon");
+    const anyFuel = Boolean(basisRaw) || Boolean(baselineRaw) || Boolean(mpgRaw);
+
+    let fuel: RateCard["fuel"] = null;
+    if (anyFuel) {
+      if (!basisRaw || !baselineRaw || !mpgRaw) {
+        throw new RateCardError(
+          "A fuel surcharge needs all three: fuel type, the pump price your rate assumes, and miles per gallon.",
+        );
+      }
+      if (basisRaw !== "gasoline" && basisRaw !== "diesel") {
+        throw new RateCardError("Choose either gasoline or diesel.");
+      }
+      const mpg = Number(mpgRaw);
+      if (!Number.isFinite(mpg) || mpg <= 0) {
+        throw new RateCardError("Miles per gallon must be a number greater than zero.");
+      }
+      fuel = {
+        basis: basisRaw,
+        // Through the same money parser as every other amount — never parseFloat, and it
+        // refuses an ambiguous comma rather than turning $3,45 into $345 a gallon.
+        baselineCentsPerGallon: money(data, "fuelBaseline", "Baseline fuel price"),
+        // Tenths, so the stored value is an integer and no float reaches a price.
+        milesPerGallonTenths: Math.round(mpg * 10),
+      };
+    }
+
+    const card: RateCard = { rates, driverPayPercent, maxQuotableMeters, fuel };
     await saveRateCard(db, tenantId, card);
   } catch (err) {
     if (isRedirectError(err)) throw err;
