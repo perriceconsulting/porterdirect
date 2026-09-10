@@ -74,7 +74,7 @@ test.describe("accepting an invitation without an account", () => {
 
   test.afterAll(async () => {
     if (tenantId) await db.delete(tenants).where(eq(tenants.id, tenantId));
-    for (const local of ["driver", "wrong", "orphan"]) {
+    for (const local of ["driver", "wrong", "orphan", "other", "owner"]) {
       await db.delete(users).where(eq(users.email, `${local}@${DOMAIN}`));
     }
   });
@@ -169,6 +169,43 @@ test.describe("accepting an invitation without an account", () => {
     expect(
       await db.select().from(users).where(eq(users.email, `orphan@${DOMAIN}`)),
     ).toHaveLength(0);
+  });
+
+  /**
+   * The case the operator actually hits, and the one a real person hit tonight. They send
+   * the invitation, click the link to see what it looks like, and are already signed in as
+   * a DIFFERENT account on the same browser — so the page takes the mismatch branch. That
+   * branch used to tell them to "sign out and sign back in" and offer nothing to click,
+   * while its only link abandoned the invitation.
+   */
+  test("someone signed in as the wrong account can get out of the way", async ({ page }) => {
+    const invited = `other@${DOMAIN}`;
+    const token = await invite(invited);
+
+    const ownerEmail = `owner@${DOMAIN}`;
+    const created = await page.request.post("/api/auth/sign-up/email", {
+      data: { email: ownerEmail, password: PASSWORD, name: "Owner Person" },
+    });
+    expect(created.ok(), `sign-up failed: ${created.status()}`).toBeTruthy();
+
+    await page.goto("/signin");
+    await page.locator('input[name="email"]').fill(ownerEmail);
+    await page.locator('input[name="password"]').fill(PASSWORD);
+    await Promise.all([
+      page.waitForURL(/\/(welcome|dashboard|drive)/),
+      page.locator('button[type="submit"]').click(),
+    ]);
+
+    await page.goto(`/invite/${token}`);
+    await expect(page.locator("p.error")).toContainText(/different address/i);
+
+    // The fix: a way to act on what the message asks that KEEPS the invitation.
+    await Promise.all([
+      page.waitForURL(new RegExp(`/invite/${token}`), { timeout: 60_000 }),
+      page.getByRole("button", { name: "Sign out and continue" }).click(),
+    ]);
+
+    await expect(page.getByRole("button", { name: "Create account and accept" })).toBeVisible();
   });
 
   test("an invalid token offers nothing to fill in", async ({ page }) => {

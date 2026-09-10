@@ -153,3 +153,27 @@ export async function acceptInviteWithNewAccountAction(data: FormData): Promise<
 
   redirect(homePathForRole(role, tenantId));
 }
+
+/**
+ * Sign out, and come straight back to this invitation.
+ *
+ * Without it the mismatch branch was a cul-de-sac: it told the person to "sign out and
+ * sign back in as the invited account" and gave them nothing to click, while the only
+ * link on the page abandoned the invitation entirely. That is a real case rather than an
+ * edge one — the person who INVITES a driver is usually the operator, signed in on the
+ * same browser, and they are the one most likely to click the link to see what it does.
+ *
+ * The redirect target is built from a fixed prefix, and the token is checked against the
+ * alphabet it is minted from. That is what stops a crafted `token` walking out of `/invite`
+ * — a value taken from a form and interpolated into a redirect is the classic open-redirect
+ * shape, and it is why the driver actions were kept separate from the console's in the
+ * first place.
+ */
+export async function signOutAndReturnToInviteAction(data: FormData): Promise<void> {
+  const raw = data.get("token");
+  const token = typeof raw === "string" ? raw : "";
+  const safe = /^[A-Za-z0-9_-]{1,128}$/.test(token);
+
+  await getAuth().api.signOut({ headers: await headers() });
+  redirect(safe ? `/invite/${token}` : "/signin");
+}

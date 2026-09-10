@@ -11,7 +11,11 @@ import { SiteHeader } from "../../_components/site-header";
 import { getAuth } from "../../../lib/auth";
 import { findInvitationByToken } from "../../../lib/invitations";
 import { PasswordField } from "../../_components/password-field";
-import { acceptInvitationAction, acceptInviteWithNewAccountAction } from "./actions";
+import {
+  acceptInvitationAction,
+  acceptInviteWithNewAccountAction,
+  signOutAndReturnToInviteAction,
+} from "./actions";
 
 export const metadata = { title: "Invitation — PorterDirect" };
 export const dynamic = "force-dynamic";
@@ -136,10 +140,25 @@ export default async function AcceptInvite({
                 signed in as.
               </p>
               <p className="sub">
-                Sign out and sign back in as the invited account to accept it.
+                Sign out and continue as the invited account. If it has no account yet, you
+                will be able to create one.
               </p>
+              {/*
+                An actual way to do what the sentence above asks. This branch used to say
+                "sign out and sign back in" and offer only a link that abandoned the
+                invitation — a cul-de-sac reached most often by the operator who sent it,
+                since they are signed in on the same browser.
+              */}
+              <form action={signOutAndReturnToInviteAction}>
+                <input type="hidden" name="token" value={token} />
+                <div className="form-actions">
+                  <button className="btn btn-primary" type="submit">
+                    Sign out and continue
+                  </button>
+                </div>
+              </form>
               <p className="alt">
-                <a href="/dashboard">Go to your accounts</a>
+                <a href="/dashboard">Go to your accounts instead</a>
               </p>
             </>
           ) : (
