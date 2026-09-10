@@ -428,6 +428,18 @@ mirror the catalog's `stripePriceEnv` ids (per-account, do not transfer between 
 - **`next build` hangs while the dev server holds `.next`.** Not an error — it simply never
   finishes, which reads as a slow build. Kill the dev server first. Same root cause as the
   EPERM on `.next/trace` when Playwright tries to start a second server on an occupied port.
+- **The Vercel CLI REWRITES `.env.local` and silently drops what it does not know about.**
+  Running `vercel env` commands in a linked project replaces the file from what Vercel
+  holds. Two locally-added variables were wiped by it — `CRON_SECRET` and
+  `BETTER_AUTH_TRUSTED_ORIGINS` — and `VERCEL_OIDC_TOKEN` appeared that nobody added. It
+  looks exactly like "my write did not persist", and it was blamed on file handles for a
+  while before the pattern showed. After ANY `vercel env` command, re-check the local file.
+- **Appending to a file whose last line has no trailing newline fuses two lines.**
+  `BETTER_AUTH_TRUSTED_ORIGINS=…` landed on the end of a `# S3 storage` comment, which
+  commented the variable out entirely — set, verified by a `grep` that had matched before
+  the file was rewritten, and inert. Sibling of the `KEY= value` landmine already recorded:
+  a secrets file is parsed strictly, and the ways it can be malformed are silent. Append by
+  reading, normalising the trailing newline, writing, and READING BACK the specific key.
 - **Off-shift / post-delivery tracking** (driver app, later): location visibility is wired to
   shift/order status; continuing to track after off-shift is a legal liability, not a bug.
 - **Optimistic/offline updates that never reconcile** (driver app, later): every optimistic or
