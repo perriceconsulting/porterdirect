@@ -1459,3 +1459,56 @@ live-map reactivity.
     do not exist yet; this slice is only what they stand on.
   - Ratchets: tests = **458** (was 415) + 10 PHAST + **53 e2e** (was 47); client
     components = 3; lint = 0; min-width:max-width media queries = 9:0.
+
+- **2026-09-10 — Positioning settled, and an audit that contradicted the PRD.**
+  - Asked to research the competition, and the finding reversed the headline. **White-label
+    is table stakes**: Onro, InstaDispatch, LiveCourier, Metafour, Softpal and
+    CourierManager all ship branded no-login tracking and self-service booking, CXT
+    includes white labelling in every plan, and Onro does custom domains at $239. "Run
+    your operation under your own brand" cannot carry $199-$999. The PRD headline is now
+    **the evidence a courier needs to win contracts**; dispatch is how it gets produced.
+  - **The moat is narrower than it first looked, and the PRD now says so.** SOC 2 is
+    already held by Shipday, DispatchTrack and Dispatch, so it is a qualifier between
+    vendors rather than a differentiator — it holds against the COURIER, who can never
+    produce one, and not against DispatchTrack pricing down. The durable wedge is
+    **access logging**: no incumbent advertises it, it is what a HECVAT actually asks, and
+    unlike a badge it is specific and checkable.
+  - **The audit contradicted a claim this repo had been making.** `CLAUDE.prd.md` listed
+    "append-only audit trail" under what is BUILT. It is not true at the database level:
+    `order_events` is append-only by COMMENT, with zero triggers, revoked grants or RLS
+    across all 18 migrations, and it cascade-deletes from both `orders` and `tenants`. It
+    also records status transitions only, so an edited address or a reassigned driver
+    leaves no trace. Exactly the failure class this file catalogues — passes every test,
+    returns 200, and then someone asks you to prove it. Corrected in the PRD first,
+    because it is the one item that costs nothing and it stops the next person building on
+    a false premise.
+  - **Retention is worse than missing, and that reclassification matters.** Deleting an
+    order orphans the POD photo and signature in the bucket with no key left to find them.
+    That is PHI we can neither account for nor destroy on request — under a BAA a
+    reportable condition, not a backlog item. It therefore sequences ABOVE access logging,
+    for a reason worth keeping: **you cannot log access to objects you can no longer
+    enumerate.**
+  - **Stripe will not sign a BAA**, and PHI in ANY Stripe field — metadata, invoices,
+    receipts, webhooks — breaks the payment-processing exemption. That is now an
+    architectural constraint rather than a preference, and it gets a test rather than a
+    convention. It also retroactively justifies settling customer payment off-platform.
+  - The Mapbox adapter sends full pickup and drop-off addresses to a third party; for a
+    medical tenant that is a patient address. **It is wired to nothing and has never sent
+    one**, so the decision is deferred rather than urgent — recorded so that wiring it is
+    a deliberate act.
+  - "100% platform anonymity" is withdrawn from the Agency tier: a covered entity must
+    know its business associates, so total invisibility conflicts with the BAA the medical
+    positioning creates. The capability stays and still gates the sender-domain work; what
+    it means is "our brand does not appear to the operator's customers", which is a
+    branding guarantee, not a disclosure one.
+  - **Nothing was deleted.** Freight was reviewed for removal and there is no
+    implementation to remove — no files, no parsers, no load-board code. The
+    `fleet_freight` entries in the catalogue gate correctly and back the $499 Price;
+    deleting them would break entitlement. Every cut was documentation.
+  - Left alone (with reason): `apps/marketing/app/layout.tsx` still carries the retired
+    headline as its OpenGraph title. Live copy on a real domain deserves its own pass, not
+    a trailing edit on a document change; recorded in the PRD rather than half-fixed.
+  - **The gap that remains, recorded rather than absorbed:** no operator conversations and
+    no pre-commitments. All of this is desk- and repo-verified, which establishes that we
+    CAN build the thing and not that anyone will buy it.
+  - Ratchets unchanged: tests = 474 + 10 PHAST + 53 e2e; client components = 3; lint = 0.
